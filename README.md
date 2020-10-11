@@ -63,8 +63,8 @@ impl Parse for MyField {
 }
 ```
 This is really repetetive! Ideally, we'd like to just `#[derive(Parse)]` and have it work. And
-so we can! (for the most part):
-implementation:
+so we can! (for the most part) Adding `#[derive(Parse)]` to the previous struct produces an
+equivalent implementation of `Parse`:
 ```rust
 use syn::{Ident, Token, Type};
 use syn_derive_parse::Parse;
