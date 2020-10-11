@@ -1,3 +1,6 @@
+![crates.io](https://img.shields.io/crates/v/derive-syn-parse.svg)
+![docs.rs](https://docs.rs/derive-syn-parse/badge.svg)
+
 # A derive macro for `syn`'s `Parse` trait
 
 This is a relatively simple derive macro that produces an implementation `syn::parse::Parse` for the
