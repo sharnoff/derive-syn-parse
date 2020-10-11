@@ -1,0 +1,22 @@
+[package]
+name = "derive-syn-parse"
+version = "0.1.0"
+authors = ["sharnoff <github@max.sharnoff.org>"]
+license = "MIT OR Apache-2.0"
+description = "Derive macro for `syn::parse::Parse`"
+repository = "https://github.com/sharnoff/syn-parse-derive"
+categories = ["development-tools::procedural-macro-helpers"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0.44", features = ["derive", "parsing"] }
+quote = "1"
+proc-macro2 = "1"
+
+# Testing relies on being able to compare the output of the macros, which is why we need a
+# different version of syn
+[dev-dependencies]
+syn = { version = "1.0.44", features = ["full", "extra-traits"] }
