@@ -12,15 +12,15 @@
 //! # Cargo.toml
 //!
 //! [dependencies]
-//! syn-derive-parse = "0.1"
+//! derive-syn-parse = "0.1"
 //! ```
 //!
 //! ```
 //! // your_file.rs
-//! use syn_derive_parse::Parse;
+//! use derive_syn_parse::Parse;
 //!
 //! #[derive(Parse)]
-//! struct CustomParseable {
+//! struct CustomParsable {
 //!     // ...
 //! }
 //! ```
@@ -61,7 +61,7 @@
 //! equivalent implementation of `Parse`:
 //! ```
 //! use syn::{Ident, Token, Type};
-//! use syn_derive_parse::Parse;
+//! use derive_syn_parse::Parse;
 //!
 //! #[derive(Parse)]
 //! struct MyField {
@@ -76,10 +76,10 @@
 //!
 //! ## Advanced usage
 //!
-//! There's a moderate collection of helper attributes that can be applied to fields and generic
-//! parameters to customize the generated implementation of `Parse`. Each of these are demonstrated
-//! with the implementation that they produce. Please note that the produced implementation is
-//! typically *not* identical to what's shown here.
+//! There's a moderate collection of helper attributes that can be applied to fields to customize
+//! the generated implementation of `Parse`. Each of these are demonstrated with the
+//! implementation that they produce. Please note that the produced implementation is typically
+//! *not* identical to what's shown here.
 //!
 //! All of the examples are fairly contrived, I know. The reality of the matter is that - if you
 //! would find this useful - it's probably true that your use-case is much more complicated than
@@ -104,6 +104,9 @@
 //! These are typically used in conjunction with [`#[inside]`](#inside).
 //!
 //! ```
+//! # use syn::{Ident, token::Paren, Expr};
+//! # use derive_syn_parse::Parse;
+//!
 //! // A single-argument function call
 //! //
 //! //     so_long(and_thanks + for_all * the_fish)
@@ -118,6 +121,10 @@
 //! ```
 //! produces
 //! ```
+//! # use syn::parse::{Parse, ParseStream};
+//! # use syn::{Ident, token::Paren, Expr};
+//! # struct SingleArgFn { ident: Ident, paren_token: Paren, arg: Expr }
+//!
 //! impl Parse for SingleArgFn {
 //!     fn parse(input: ParseStream) -> syn::Result<Self> {
 //!         let paren;
@@ -136,8 +143,9 @@
 //! attribute indicates that the field should be parsed using a previous field as the source.
 //!
 //! ```
-//! use syn::token::Bracket;
+//! # use derive_syn_parse::Parse;
 //! use syn::{Type, Token, Expr};
+//! use syn::token::Bracket;
 //!
 //! // An array type required to have a length
 //! //
@@ -159,11 +167,16 @@
 //! ```
 //! produces
 //! ```
+//! # use syn::parse::{Parse, ParseStream};
+//! # use syn::{Type, Token, Expr};
+//! # use syn::token::Bracket;
+//! # struct KnownLengthArrayType { bracket_token: Bracket, ty: Type, semi_token: Token![;], expr: Expr }
+//!
 //! impl Parse for KnownLengthArrayType {
 //!     fn parse(input: ParseStream) -> syn::Result<Self> {
 //!         let bracket;
 //!         Ok(KnownLengthArrayType {
-//!             bracket_token: syn::braced!(bracket in input),
+//!             bracket_token: syn::bracketed!(bracket in input),
 //!             ty: bracket.parse()?,
 //!             semi_token: bracket.parse()?,
 //!             expr: bracket.parse()?,
@@ -178,6 +191,7 @@
 //! instead calculated by a call to `input.parse(..)` with a given path. The best example is taken
 //! straight from the [`syn` documentation itself](syn::parse::ParseBuffer::call):
 //! ```
+//! # use derive_syn_parse::Parse;
 //! use syn::{Attribute, Ident, Token};
 //!
 //! // Parses a unit struct with attributes.
@@ -195,6 +209,10 @@
 //! ```
 //! produces
 //! ```
+//! # use syn::parse::{Parse, ParseStream};
+//! # use syn::{Attribute, Ident, Token};
+//! # struct UnitStruct { attrs: Vec<Attribute>, struct_token: Token![struct], name: Ident, semi_token: Token![;] }
+//!
 //! impl Parse for UnitStruct {
 //!     fn parse(input: ParseStream) -> syn::Result<Self> {
 //!         Ok(UnitStruct {
@@ -215,9 +233,13 @@
 //! uses:
 //!
 //! ```
+//! # use syn::{Ident, token, Token, Type, punctuated::Punctuated};
+//! # use derive_syn_parse::Parse;
+//!
 //! // Parse a simplified tuple struct syntax like:
 //! //
 //! //     struct S(A, B);
+//! #[derive(Parse)]
 //! struct TupleStruct {
 //!     struct_token: Token![struct],
 //!     ident: Ident,
@@ -231,8 +253,14 @@
 //! ```
 //! produces
 //! ```
+//! # use syn::parse::{Parse, ParseStream};
+//! # use syn::{Ident, token, Token, Type, punctuated::Punctuated, parenthesized};
+//! # struct TupleStruct {
+//! #     struct_token: Token![struct], ident: Ident, paren_token: token::Paren, fields: Punctuated<Type, Token![,]>, semi_token: Token![;],
+//! # }
+//!
 //! impl Parse for TupleStruct {
-//!     fn parse(input: ParseStream) -> Result<Self> {
+//!     fn parse(input: ParseStream) -> syn::Result<Self> {
 //!         let content;
 //!         Ok(TupleStruct {
 //!             struct_token: input.parse()?,
@@ -247,36 +275,6 @@
 //! ```
 //!
 //! [`Punctuated`]: syn::punctuated::Punctuated
-//!
-//! ### `#[no_parse_bound]`
-//!
-//! By default, all type parameters in the source struct are required to implement `Parse`. The
-//! `#[no_parse_bound]` attribute can be applied to them to lift that restriction. This is perhaps
-//! less applicable, but available for certain use-cases:
-//!
-//! ```
-//! use std::marker::PhantomData;
-//!
-//! // [pretend this has an implementation of `Parse` that does nothing]
-//! struct ParseablePhantomData<T>(PhantomData<T>);
-//!
-//! #[derive(Parse)]
-//! struct Foo<#[no_parse_bound] T, S> {
-//!     bar: S,
-//!     _marker: ParseablePhantomData<T>,
-//! }
-//! ```
-//! produces
-//! ```
-//! impl<T, S: Parse> Parse for Foo<T, S> {
-//!     fn parse(input: ParseStream) -> syn::Result<Self> {
-//!         Ok(Foo {
-//!             bar: input.parse()?,
-//!             _marker: input.parse()?,
-//!         })
-//!     }
-//! }
-//! ```
 //!
 //! ## Known limitations
 //!
@@ -331,14 +329,14 @@ pub(crate) fn derive_parse_internal(input: DeriveInput) -> TokenStream {
 
     let generic_params: Vec<_> = input.generics.params.into_iter().collect();
     if !generic_params.is_empty() {
-        generics_intro = handle_syn_result! {
+        let generics_intros: Vec<_> = handle_syn_result! {
             generic_params.iter()
                 .map(require_impl_parse_if_type)
                 .collect()
         };
-        generics_intro = quote!( < #generics_intro > );
-        generics_args = generic_params.into_iter().map(convert_to_arg).collect();
-        generics_args = quote!( < #generics_args > );
+        generics_intro = quote!( < #( #generics_intros ),* > );
+        let generics_args_list: Vec<_> = generic_params.into_iter().map(convert_to_arg).collect();
+        generics_args = quote!( < #( #generics_args_list ),* > );
     }
 
     let ident = input.ident;
@@ -543,7 +541,7 @@ fn parse_field((idx, field): (usize, syn::Field)) -> Result<TokenStream> {
     Ok(quote_spanned! {
         span=>
         #( let #required_var_defs; )*
-        let #assigned_name = #parse_expr?;
+        let #assigned_name = #parse_expr;
     })
 }
 
@@ -680,15 +678,15 @@ fn handle_field_attrs(field_name: &Ident, attrs: FieldAttrs) -> ParseField {
     match attrs.parse_method {
         Default => {
             required_var_defs = None;
-            parse_expr = quote_spanned! { field_name.span()=> #input_source.parse() };
+            parse_expr = quote_spanned! { field_name.span()=> #input_source.parse()? };
         }
         Call(path) => {
             required_var_defs = None;
-            parse_expr = quote_spanned! { path.span()=> #input_source.call(#path) };
+            parse_expr = quote_spanned! { path.span()=> #input_source.call(#path)? };
         }
         ParseTerminated(path) => {
             required_var_defs = None;
-            parse_expr = quote_spanned! { path.span()=> #input_source.parse_terminated(#path) };
+            parse_expr = quote_spanned! { path.span()=> #input_source.parse_terminated(#path)? };
         }
         Tree(tree_kind) => {
             required_var_defs = Some(tree_name(field_name));
