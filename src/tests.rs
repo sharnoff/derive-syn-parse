@@ -47,22 +47,25 @@ test_all! {
         }",
     },
     generic_struct: {
-        "struct Foo<B: Bar>
-        where B::Qux: Quack,
+        "struct Foo<B, Q: Quack>
+        where <B as Bar>::Qux: Quack,
         {
             bar: B,
             baz: Baz,
+            quacker: Q,
         }",
-        "impl<B: Bar + syn::parse::Parse> syn::parse::Parse for Foo<B>
-        where B::Qux: Quack,
+        "impl<B: syn::parse::Parse, Q: Quack + syn::parse::Parse> syn::parse::Parse for Foo<B, Q>
+        where <B as Bar>::Qux: Quack,
         {
             fn parse(__parse_input: syn::parse::ParseStream) -> syn::Result<Self> {
                 let bar = __parse_input.parse()?;
                 let baz = __parse_input.parse()?;
+                let quacker = __parse_input.parse()?;
 
                 Ok(Self {
                     bar,
                     baz,
+                    quacker,
                 })
             }
         }",
@@ -80,7 +83,7 @@ test_all! {
                 let bar = __parse_input.parse()?;
 
                 let __paren_backing_token_stream;
-                let paren = syn::parenthesized!(__paren_backing_token_stream in __parse_input)?;
+                let paren = syn::parenthesized!(__paren_backing_token_stream in __parse_input);
                 let baz = __paren_backing_token_stream.parse()?;
 
                 Ok(Self {
@@ -107,10 +110,10 @@ test_all! {
                 let bar = __parse_input.parse()?;
 
                 let __fst_backing_token_stream;
-                let fst = syn::bracketed!(__fst_backing_token_stream in __parse_input)?;
+                let fst = syn::bracketed!(__fst_backing_token_stream in __parse_input);
 
                 let __snd_backing_token_stream;
-                let snd = syn::braced!(__snd_backing_token_stream in __fst_backing_token_stream)?;
+                let snd = syn::braced!(__snd_backing_token_stream in __fst_backing_token_stream);
 
                 let baz = __snd_backing_token_stream.parse()?;
 

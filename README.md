@@ -18,15 +18,15 @@ Using this crate is as simple as adding it to your 'Cargo.toml' and importing th
 # Cargo.toml
 
 [dependencies]
-syn-derive-parse = "0.1"
+derive-syn-parse = "0.1"
 ```
 
 ```rust
 // your_file.rs
-use syn_derive_parse::Parse;
+use derive_syn_parse::Parse;
 
 #[derive(Parse)]
-struct CustomParseable {
+struct CustomParsable {
     // ...
 }
 ```
@@ -67,7 +67,7 @@ so we can! (for the most part) Adding `#[derive(Parse)]` to the previous struct 
 equivalent implementation of `Parse`:
 ```rust
 use syn::{Ident, Token, Type};
-use syn_derive_parse::Parse;
+use derive_syn_parse::Parse;
 
 #[derive(Parse)]
 struct MyField {
@@ -82,10 +82,10 @@ Of course, there are more complicated cases. This is mainly covered immediately 
 
 ## Advanced usage
 
-There's a moderate collection of helper attributes that can be applied to fields and generic
-parameters to customize the generated implementation of `Parse`. Each of these are demonstrated
-with the implementation that they produce. Please note that the produced implementation is
-typically *not* identical to what's shown here.
+There's a moderate collection of helper attributes that can be applied to fields to customize the
+generated implementation of `Parse`. Each of these are demonstrated with the implementation that
+they produce. Please note that the produced implementation is typically *not* identical to what's
+shown here.
 
 All of the examples are fairly contrived, I know. The reality of the matter is that - if you
 would find this useful - it's probably true that your use-case is much more complicated than
@@ -99,7 +99,6 @@ it here!)
 - [`#[inside]`](#inside)
 - [`#[call]`](#call)
 - [`#[parse_terminated]`](#parse_terminated)
-- [`#[no_parse_bound]`](#no_parse_bound)
 
 ### `#[paren]` / `#[bracket]` / `#[brace]`
 
@@ -142,8 +141,8 @@ This is a companion to `#[paren]`/`#[bracket]`/`#[brace]` - given a field name t
 attribute indicates that the field should be parsed using a previous field as the source.
 
 ```rust
-use syn::token::Bracket;
 use syn::{Type, Token, Expr};
+use syn::token::Bracket;
 
 // An array type required to have a length
 //
@@ -224,6 +223,7 @@ uses:
 // Parse a simplified tuple struct syntax like:
 //
 //     struct S(A, B);
+#[derive(Parse)]
 struct TupleStruct {
     struct_token: Token![struct],
     ident: Ident,
@@ -250,36 +250,6 @@ impl Parse for TupleStruct {
     }
 }
 
-```
-
-### `#[no_parse_bound]`
-
-By default, all type parameters in the source struct are required to implement `Parse`. The
-`#[no_parse_bound]` attribute can be applied to them to lift that restriction. This is perhaps
-less applicable, but available for certain use-cases:
-
-```rust
-use std::marker::PhantomData;
-
-// [pretend this has an implementation of `Parse` that does nothing]
-struct ParseablePhantomData<T>(PhantomData<T>);
-
-#[derive(Parse)]
-struct Foo<#[no_parse_bound] T, S> {
-    bar: S,
-    _marker: ParseablePhantomData<T>,
-}
-```
-produces
-```rust
-impl<T, S: Parse> Parse for Foo<T, S> {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(Foo {
-            bar: input.parse()?,
-            _marker: input.parse()?,
-        })
-    }
-}
 ```
 
 ## Known limitations
