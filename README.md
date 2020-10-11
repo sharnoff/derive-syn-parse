@@ -1,5 +1,5 @@
-![crates.io](https://img.shields.io/crates/v/derive-syn-parse.svg)
-![docs.rs](https://docs.rs/derive-syn-parse/badge.svg)
+[![crates.io](https://img.shields.io/crates/v/derive-syn-parse.svg)](https://crates.io/crates/derive-syn-parse)
+[![docs.rs](https://docs.rs/derive-syn-parse/badge.svg)](https://docs.rs/derive-syn-parse)
 
 # A derive macro for `syn`'s `Parse` trait
 
