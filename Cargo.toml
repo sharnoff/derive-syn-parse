@@ -12,11 +12,11 @@ edition = "2018"
 proc-macro = true
 
 [dependencies]
-syn = { version = "1.0.44", features = ["derive", "parsing"] }
+syn = { version = "1", features = ["derive", "parsing"] }
 quote = "1"
 proc-macro2 = "1"
 
 # Testing relies on being able to compare the output of the macros, which is why we need a
 # different version of syn
 [dev-dependencies]
-syn = { version = "1.0.44", features = ["full", "extra-traits"] }
+syn = { version = "1", features = ["full", "extra-traits"] }
