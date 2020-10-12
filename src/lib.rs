@@ -496,7 +496,7 @@ enum TreeKind {
 }
 
 enum ParseMethod {
-    Tree(TreeKind),
+    Tree(TreeKind, Span),
     Call(Path),
     ParseTerminated(Path),
     Default,
@@ -534,7 +534,7 @@ fn parse_field((idx, field): (usize, syn::Field)) -> Result<TokenStream> {
     let ParseField {
         required_var_defs,
         parse_expr,
-    } = handle_field_attrs(&assigned_name, attrs);
+    } = handle_field_attrs(&assigned_name, field.ty.span(), attrs);
 
     // convert the Option to an iterator, so we can declare variables conditionally:
     let required_var_defs = required_var_defs.into_iter();
@@ -651,7 +651,7 @@ impl TryFrom<Vec<(FieldAttr, Span)>> for FieldAttrs {
 
                 Call(path) => parse_method = ParseMethod::Call(path),
                 ParseTerminated(path) => parse_method = ParseMethod::ParseTerminated(path),
-                Tree(kind) => parse_method = ParseMethod::Tree(kind),
+                Tree(kind) => parse_method = ParseMethod::Tree(kind, span),
                 Inside(name) => inside = Some(name),
             }
         }
@@ -663,7 +663,7 @@ impl TryFrom<Vec<(FieldAttr, Span)>> for FieldAttrs {
     }
 }
 
-fn handle_field_attrs(field_name: &Ident, attrs: FieldAttrs) -> ParseField {
+fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> ParseField {
     use ParseMethod::{Call, Default, ParseTerminated, Tree};
 
     let input_source = attrs
@@ -678,7 +678,7 @@ fn handle_field_attrs(field_name: &Ident, attrs: FieldAttrs) -> ParseField {
     match attrs.parse_method {
         Default => {
             required_var_defs = None;
-            parse_expr = quote_spanned! { field_name.span()=> #input_source.parse()? };
+            parse_expr = quote_spanned! { ty_span=> #input_source.parse()? };
         }
         Call(path) => {
             required_var_defs = None;
@@ -688,12 +688,12 @@ fn handle_field_attrs(field_name: &Ident, attrs: FieldAttrs) -> ParseField {
             required_var_defs = None;
             parse_expr = quote_spanned! { path.span()=> #input_source.parse_terminated(#path)? };
         }
-        Tree(tree_kind) => {
+        Tree(tree_kind, span) => {
             required_var_defs = Some(tree_name(field_name));
 
             let macro_name = tree_kind.macro_name();
             let tree_name = tree_name(field_name);
-            parse_expr = quote_spanned! { field_name.span()=> syn::#macro_name!(#tree_name in #input_source) };
+            parse_expr = quote_spanned! { span=> syn::#macro_name!(#tree_name in #input_source) };
         }
     }
 
