@@ -166,19 +166,14 @@ fn try_as_variant_attr(attr: Attribute) -> Option<Result<VariantAttr>> {
 
 impl Parse for PeekInfo {
     fn parse(input: ParseStream) -> Result<Self> {
-        println!("parsing peek info: {}", input.to_string());
-
         let paren;
-        let res = Ok(PeekInfo {
+        Ok(PeekInfo {
             _paren_token: parenthesized!(paren in input),
             expr: paren.parse()?,
             _comma: paren.parse()?,
             _name_token: paren.parse()?,
             _eq: paren.parse()?,
             name: paren.parse()?,
-        });
-
-        println!("parsed peek info!");
-        res
+        })
     }
 }
