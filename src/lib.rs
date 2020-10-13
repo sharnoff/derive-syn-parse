@@ -289,23 +289,31 @@
 //! [`ParseStream::fork`]: syn::parse::ParseBuffer::fork
 
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned, ToTokens};
-use std::convert::{TryFrom, TryInto};
-use syn::parse::{Parse, ParseStream};
+use quote::{quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
-use syn::{
-    parenthesized, parse_macro_input, AttrStyle, Attribute, Data, DeriveInput, Ident, Path, Result,
-};
+use syn::{parse_macro_input, AttrStyle, Attribute, Data, DeriveInput, Ident, Result};
 
 #[macro_use]
 mod error_macros;
 
+mod fields;
 #[cfg(test)]
 mod tests;
+mod variants;
 
 #[proc_macro_derive(
     Parse,
-    attributes(paren, bracket, brace, inside, call, parse_terminated, no_parse_bound)
+    attributes(
+        paren,
+        bracket,
+        brace,
+        inside,
+        call,
+        parse_terminated,
+        peek,
+        peek_with,
+        no_parse_bound
+    )
 )]
 pub fn derive_parse(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
@@ -314,12 +322,6 @@ pub fn derive_parse(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 // Pulled into a separate function so we can test it
 pub(crate) fn derive_parse_internal(input: DeriveInput) -> TokenStream {
-    let struct_fields = match input.data {
-        Data::Struct(s) => s.fields,
-        Data::Enum(e) => invalid_input_kind!(e.enum_token),
-        Data::Union(u) => invalid_input_kind!(u.union_token),
-    };
-
     // The generic parameters following `impl`
     let mut generics_intro = TokenStream::new();
     // The generic arguments following the name of the type
@@ -341,19 +343,35 @@ pub(crate) fn derive_parse_internal(input: DeriveInput) -> TokenStream {
 
     let ident = input.ident;
 
+    let parse_impl = match input.data {
+        Data::Union(u) => invalid_input_kind!(u.union_token),
+        Data::Struct(s) => handle_syn_result! {
+            @default_impl_from(generics_intro, ident, generics_args, where_clause),
+            fields::generate_fn_body(&ident, s.fields, false)
+        },
+        Data::Enum(e) => handle_syn_result! {
+            @default_impl_from(generics_intro, ident, generics_args, where_clause),
+            variants::generate_impl(e.variants.into_iter())
+        },
+    };
+
+    /*
     let initialize_self = initialize_self(&struct_fields);
     let parse_fields: Vec<_> = handle_syn_result!(
         @default_impl_from(generics_intro, ident, generics_args, where_clause),
         struct_fields.into_iter().enumerate().map(parse_field).collect()
     );
+    */
 
     let parse_input = parse_input();
     quote!(
         impl #generics_intro syn::parse::Parse for #ident #generics_args #where_clause {
             fn parse(#parse_input: syn::parse::ParseStream) -> syn::Result<Self> {
-                #( #parse_fields )*
+                #parse_impl
 
-                Ok(#initialize_self)
+                // #( #parse_fields )*
+
+                // Ok(#initialize_self)
             }
         }
     )
@@ -436,286 +454,6 @@ fn convert_to_arg(param: syn::GenericParam) -> TokenStream {
         Const(con) => {
             let ident = &con.ident;
             quote_spanned!(con.span()=> { #ident })
-        }
-    }
-}
-
-// This needs to return tokenstreams because tuple structs use integer indices as field names
-//
-// For example: We'd end up writing the following
-//   Ok(Self {
-//       0: _field_0,
-//       1: _field_1,
-//       ...
-//   })
-//
-// Otherwise, we would totally just return a list of identifiers
-fn initialize_self(fields: &syn::Fields) -> TokenStream {
-    use syn::Fields::{Named, Unit, Unnamed};
-
-    match fields {
-        Unit => quote!(Self),
-        Named(fields) => {
-            let iter = fields.named.iter().map(|f| {
-                f.ident
-                    .as_ref()
-                    .expect("named field was unnamed! the impossible is now possible!")
-            });
-            quote! {
-                Self { #( #iter, )* }
-            }
-        }
-        Unnamed(fields) => {
-            let iter = fields
-                .unnamed
-                .iter()
-                .enumerate()
-                .map(|(i, f)| field_name_for_idx(i, f.span()));
-            quote! {
-                Self( #( #iter, )* )
-            }
-        }
-    }
-}
-
-fn field_name_for_idx(idx: usize, span: Span) -> Ident {
-    format_ident!("_field_{}", idx, span = span)
-}
-
-enum FieldAttr {
-    Inside(Ident),
-    Tree(TreeKind),
-    Call(Path),
-    ParseTerminated(Path),
-}
-
-enum TreeKind {
-    Paren,
-    Bracket,
-    Brace,
-}
-
-enum ParseMethod {
-    Tree(TreeKind, Span),
-    Call(Path),
-    ParseTerminated(Path),
-    Default,
-}
-
-impl ParseMethod {
-    fn is_default(&self) -> bool {
-        matches!(self, Self::Default)
-    }
-}
-
-struct FieldAttrs {
-    inside: Option<Ident>,
-    parse_method: ParseMethod,
-}
-
-struct ParseField {
-    required_var_defs: Option<Ident>,
-    parse_expr: TokenStream,
-    // input_source: Ident,
-    // parse_method: TokenStream,
-}
-
-fn parse_field((idx, field): (usize, syn::Field)) -> Result<TokenStream> {
-    let span = field.span();
-
-    let assigned_name = field.ident.unwrap_or_else(|| field_name_for_idx(idx, span));
-
-    let attrs = (field.attrs)
-        .into_iter()
-        .filter_map(try_as_field_attr)
-        .collect::<Result<Vec<_>>>()?
-        .try_into()?;
-
-    let ParseField {
-        required_var_defs,
-        parse_expr,
-    } = handle_field_attrs(&assigned_name, field.ty.span(), attrs);
-
-    // convert the Option to an iterator, so we can declare variables conditionally:
-    let required_var_defs = required_var_defs.into_iter();
-    Ok(quote_spanned! {
-        span=>
-        #( let #required_var_defs; )*
-        let #assigned_name = #parse_expr;
-    })
-}
-
-fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
-    let name = attr.path.get_ident()?.to_string();
-    let span = attr.span();
-
-    macro_rules! expect_outer_attr {
-        () => {{
-            if let AttrStyle::Inner(_) = attr.style {
-                return Some(Err(syn::Error::new(
-                    span,
-                    "this parsing attribute can only be used as an outer attribute",
-                )));
-            }
-        }};
-    }
-
-    #[rustfmt::skip]
-    macro_rules! expect_no_attr_args {
-        ($name:expr) => {{
-            if !attr.tokens.is_empty() {
-                return Some(Err(syn::Error::new(
-                    span,
-                    concat!("the ", $name, " parsing attribute does not expect any arguments"),
-                )));
-            }
-        }};
-    }
-
-    struct Inside<T: Parse> {
-        _paren_token: syn::token::Paren,
-        inner: T,
-    }
-
-    impl<T: Parse> Parse for Inside<T> {
-        fn parse(input: ParseStream) -> Result<Self> {
-            let paren;
-            Ok(Inside {
-                _paren_token: parenthesized!(paren in input),
-                inner: paren.parse()?,
-            })
-        }
-    }
-
-    match name.as_str() {
-        "inside" => {
-            expect_outer_attr!();
-            Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::Inside(id.inner), span)),
-            )
-        }
-        "call" => {
-            expect_outer_attr!();
-            Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::Call(id.inner), span)),
-            )
-        }
-        "parse_terminated" => {
-            expect_outer_attr!();
-            Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::ParseTerminated(id.inner), span)),
-            )
-        }
-        "paren" => {
-            expect_outer_attr!();
-            expect_no_attr_args!("`#[paren]`");
-            Some(Ok((FieldAttr::Tree(TreeKind::Paren), span)))
-        }
-        "bracket" => {
-            expect_outer_attr!();
-            expect_no_attr_args!("`#[bracket]`");
-            Some(Ok((FieldAttr::Tree(TreeKind::Bracket), span)))
-        }
-        "brace" => {
-            expect_outer_attr!();
-            expect_no_attr_args!("`#[brace]`");
-            Some(Ok((FieldAttr::Tree(TreeKind::Brace), span)))
-        }
-        _ => None,
-    }
-}
-
-impl TryFrom<Vec<(FieldAttr, Span)>> for FieldAttrs {
-    type Error = syn::Error;
-
-    fn try_from(vec: Vec<(FieldAttr, Span)>) -> Result<Self> {
-        use FieldAttr::{Call, Inside, ParseTerminated, Tree};
-
-        let mut inside = None;
-        let mut parse_method = ParseMethod::Default;
-
-        for (attr, span) in vec {
-            match attr {
-                Tree(_) | Call(_) | ParseTerminated(_) if !parse_method.is_default() => {
-                    return Err(syn::Error::new(span, "parsing method specified twice"));
-                }
-                Inside(_) if inside.is_some() => {
-                    return Err(syn::Error::new(
-                        span,
-                        "containing parse stream is specified twice",
-                    ));
-                }
-
-                Call(path) => parse_method = ParseMethod::Call(path),
-                ParseTerminated(path) => parse_method = ParseMethod::ParseTerminated(path),
-                Tree(kind) => parse_method = ParseMethod::Tree(kind, span),
-                Inside(name) => inside = Some(name),
-            }
-        }
-
-        Ok(FieldAttrs {
-            inside,
-            parse_method,
-        })
-    }
-}
-
-fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> ParseField {
-    use ParseMethod::{Call, Default, ParseTerminated, Tree};
-
-    let input_source = attrs
-        .inside
-        .as_ref()
-        .map(tree_name)
-        .unwrap_or_else(parse_input);
-
-    let required_var_defs;
-    let parse_expr;
-
-    match attrs.parse_method {
-        Default => {
-            required_var_defs = None;
-            parse_expr = quote_spanned! { ty_span=> #input_source.parse()? };
-        }
-        Call(path) => {
-            required_var_defs = None;
-            parse_expr = quote_spanned! { path.span()=> #input_source.call(#path)? };
-        }
-        ParseTerminated(path) => {
-            required_var_defs = None;
-            parse_expr = quote_spanned! { path.span()=> #input_source.parse_terminated(#path)? };
-        }
-        Tree(tree_kind, span) => {
-            required_var_defs = Some(tree_name(field_name));
-
-            let macro_name = tree_kind.macro_name();
-            let tree_name = tree_name(field_name);
-            parse_expr = quote_spanned! { span=> syn::#macro_name!(#tree_name in #input_source) };
-        }
-    }
-
-    ParseField {
-        required_var_defs,
-        parse_expr,
-    }
-}
-
-fn tree_name(field_name: &Ident) -> Ident {
-    format_ident!("__{}_backing_token_stream", field_name)
-}
-
-impl TreeKind {
-    // Gives the name of the syn macro that corresponds to attempting parse the next token as a
-    // certain group
-    fn macro_name(&self) -> Ident {
-        let span = Span::call_site();
-        match self {
-            TreeKind::Paren => Ident::new("parenthesized", span),
-            TreeKind::Bracket => Ident::new("bracketed", span),
-            TreeKind::Brace => Ident::new("braced", span),
         }
     }
 }
