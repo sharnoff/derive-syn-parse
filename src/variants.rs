@@ -44,21 +44,21 @@ pub(crate) fn generate_impl(
 fn implemented_error_msg(names: Vec<LitStr>) -> String {
     let one_of = match names.len() {
         1 => "",
-        2 => "either of ",
+        2 => "either ",
         _ => "one of ",
     };
 
     let name_list = match names.len() {
         0 => unreachable!(),
-        1 => format!("`{}`", names[0].value()),
-        2 => format!("`{}` or `{}`", names[0].value(), names[1].value()),
+        1 => names[0].value(),
+        2 => format!("{} or {}", names[0].value(), names[1].value()),
         _ => {
             let middle = names[1..names.len() - 1]
                 .iter()
-                .map(|name| format!(", `{}`", name.value()))
+                .map(|name| format!(", {}", name.value()))
                 .collect::<String>();
             format!(
-                "`{}`{}, or `{}`",
+                "{}{}, or {}",
                 names[0].value(),
                 middle,
                 names.last().unwrap().value()
