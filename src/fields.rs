@@ -5,7 +5,7 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::convert::{TryFrom, TryInto};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{parenthesized, AttrStyle, Attribute, Fields, Ident, Path, Result, Token};
+use syn::{parenthesized, AttrStyle, Attribute, Expr, Fields, Ident, Path, Result, Token};
 
 pub(crate) fn generate_fn_body(
     base_tyname: &impl ToTokens,
@@ -36,6 +36,7 @@ enum FieldAttr {
     Tree(TreeKind),
     Call(Path),
     ParseTerminated(Path),
+    Peek(PeekAttr),
 }
 
 enum TreeKind {
@@ -51,6 +52,11 @@ enum ParseMethod {
     Default,
 }
 
+enum PeekAttr {
+    Peek(Expr),
+    PeekWith(Expr),
+}
+
 impl ParseMethod {
     fn is_default(&self) -> bool {
         matches!(self, Self::Default)
@@ -60,6 +66,7 @@ impl ParseMethod {
 struct FieldAttrs {
     inside: Option<Ident>,
     parse_method: ParseMethod,
+    peek: Option<PeekAttr>,
 }
 
 struct ParseField {
@@ -215,6 +222,21 @@ fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
             expect_no_attr_args!("`#[brace]`");
             Some(Ok((FieldAttr::Tree(TreeKind::Brace), span)))
         }
+        "peek" => {
+            expect_outer_attr!();
+            Some(
+                syn::parse2(attr.tokens)
+                    .map(move |id: Inside<_>| (FieldAttr::Peek(PeekAttr::Peek(id.inner)), span)),
+            )
+        }
+        "peek_with" => {
+            expect_outer_attr!();
+            Some(
+                syn::parse2(attr.tokens).map(move |id: Inside<_>| {
+                    (FieldAttr::Peek(PeekAttr::PeekWith(id.inner)), span)
+                }),
+            )
+        }
         _ => None,
     }
 }
@@ -223,9 +245,10 @@ impl TryFrom<Vec<(FieldAttr, Span)>> for FieldAttrs {
     type Error = syn::Error;
 
     fn try_from(vec: Vec<(FieldAttr, Span)>) -> Result<Self> {
-        use FieldAttr::{Call, Inside, ParseTerminated, Tree};
+        use FieldAttr::{Call, Inside, ParseTerminated, Peek, Tree};
 
         let mut inside = None;
+        let mut peek = None;
         let mut parse_method = ParseMethod::Default;
 
         for (attr, span) in vec {
@@ -239,17 +262,22 @@ impl TryFrom<Vec<(FieldAttr, Span)>> for FieldAttrs {
                         "containing parse stream is specified twice",
                     ));
                 }
+                Peek(_) if peek.is_some() => {
+                    return Err(syn::Error::new(span, "peeking can only be specified once"));
+                }
 
                 Call(path) => parse_method = ParseMethod::Call(path),
                 ParseTerminated(path) => parse_method = ParseMethod::ParseTerminated(path),
                 Tree(kind) => parse_method = ParseMethod::Tree(kind, span),
                 Inside(name) => inside = Some(name),
+                Peek(p) => peek = Some(p),
             }
         }
 
         Ok(FieldAttrs {
             inside,
             parse_method,
+            peek,
         })
     }
 }
@@ -264,7 +292,7 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
         .unwrap_or_else(crate::parse_input);
 
     let required_var_defs;
-    let parse_expr;
+    let mut parse_expr;
 
     match attrs.parse_method {
         Default => {
@@ -286,6 +314,19 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
             let tree_name = tree_name(field_name);
             parse_expr = quote_spanned! { span=> syn::#macro_name!(#tree_name in #input_source) };
         }
+    }
+
+    if let Some(p) = attrs.peek {
+        parse_expr = match p {
+            PeekAttr::Peek(expr) => quote!(match #input_source.peek(#expr) {
+                true => Some(#parse_expr),
+                false => None,
+            }),
+            PeekAttr::PeekWith(expr) => quote!(match (#expr)(#input_source) {
+                true => Some(#parse_expr),
+                false => None,
+            }),
+        };
     }
 
     ParseField {
