@@ -355,23 +355,11 @@ pub(crate) fn derive_parse_internal(input: DeriveInput) -> TokenStream {
         },
     };
 
-    /*
-    let initialize_self = initialize_self(&struct_fields);
-    let parse_fields: Vec<_> = handle_syn_result!(
-        @default_impl_from(generics_intro, ident, generics_args, where_clause),
-        struct_fields.into_iter().enumerate().map(parse_field).collect()
-    );
-    */
-
     let parse_input = parse_input();
     quote!(
         impl #generics_intro syn::parse::Parse for #ident #generics_args #where_clause {
             fn parse(#parse_input: syn::parse::ParseStream) -> syn::Result<Self> {
                 #parse_impl
-
-                // #( #parse_fields )*
-
-                // Ok(#initialize_self)
             }
         }
     )
