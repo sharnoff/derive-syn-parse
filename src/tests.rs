@@ -39,7 +39,7 @@ test_all! {
                 let bar = __parse_input.parse()?;
                 let baz = __parse_input.parse()?;
 
-                Ok(Self {
+                Ok(Foo {
                     bar,
                     baz,
                 })
@@ -62,7 +62,7 @@ test_all! {
                 let baz = __parse_input.parse()?;
                 let quacker = __parse_input.parse()?;
 
-                Ok(Self {
+                Ok(Foo {
                     bar,
                     baz,
                     quacker,
@@ -86,7 +86,7 @@ test_all! {
                 let paren = syn::parenthesized!(__paren_backing_token_stream in __parse_input);
                 let baz = __paren_backing_token_stream.parse()?;
 
-                Ok(Self {
+                Ok(Foo {
                     bar,
                     paren,
                     baz,
@@ -117,7 +117,7 @@ test_all! {
 
                 let baz = __snd_backing_token_stream.parse()?;
 
-                Ok(Self {
+                Ok(Foo {
                     bar,
                     fst,
                     snd,
@@ -125,5 +125,27 @@ test_all! {
                 })
             }
         }",
+    },
+    struct_peek: {
+        "struct Foo {
+            bar: Bar,
+            #[peek_with(|p| !p.is_empty())]
+            baz: Baz,
+        }",
+        "impl syn::parse::Parse for Foo {
+            fn parse(__parse_input: syn::parse::ParseStream) -> syn::Result<Self> {
+                let bar = __parse_input.parse()?;
+                
+                let baz = match (|p| !p.is_empty())(__parse_input) {
+                    true => Some(__parse_input.parse()?),
+                    false => None,
+                };
+
+                Ok(Foo {
+                    bar,
+                    baz,
+                })
+            }
+        }"
     },
 }
