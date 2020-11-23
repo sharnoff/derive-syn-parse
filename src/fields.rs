@@ -318,11 +318,11 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
 
     if let Some(p) = attrs.peek {
         parse_expr = match p {
-            PeekAttr::Peek(expr) => quote!(match #input_source.peek(#expr) {
+            PeekAttr::Peek(expr) => quote_spanned!(expr.span()=> match #input_source.peek(#expr) {
                 true => Some(#parse_expr),
                 false => None,
             }),
-            PeekAttr::PeekWith(expr) => quote!(match (#expr)(#input_source) {
+            PeekAttr::PeekWith(expr) => quote_spanned!(expr.span()=> match (#expr)(#input_source) {
                 true => Some(#parse_expr),
                 false => None,
             }),
