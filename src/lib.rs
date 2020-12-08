@@ -387,8 +387,8 @@ pub(crate) fn derive_parse_internal(input: DeriveInput) -> TokenStream {
 
     let parse_input = parse_input();
     quote!(
-        impl #generics_intro syn::parse::Parse for #ident #generics_args #where_clause {
-            fn parse(#parse_input: syn::parse::ParseStream) -> syn::Result<Self> {
+        impl #generics_intro ::syn::parse::Parse for #ident #generics_args #where_clause {
+            fn parse(#parse_input: ::syn::parse::ParseStream) -> ::syn::Result<Self> {
                 #parse_impl
             }
         }
@@ -417,12 +417,12 @@ fn require_impl_parse_if_type(param: &syn::GenericParam) -> Result<TokenStream> 
     let parse_bound = if colon_token.is_some() {
         quote_spanned! {
             ident.span()=>
-            + syn::parse::Parse
+            + ::syn::parse::Parse
         }
     } else {
         quote_spanned! {
             ident.span()=>
-            : syn::parse::Parse
+            : ::syn::parse::Parse
         }
     };
 
