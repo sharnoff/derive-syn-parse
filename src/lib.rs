@@ -331,7 +331,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, AttrStyle, Attribute, Data, DeriveInput, Ident, Result};
+use syn::{parse_macro_input, Data, DeriveInput, Ident, Result};
 
 #[macro_use]
 mod error_macros;
@@ -343,17 +343,7 @@ mod variants;
 
 #[proc_macro_derive(
     Parse,
-    attributes(
-        paren,
-        bracket,
-        brace,
-        inside,
-        call,
-        parse_terminated,
-        peek,
-        peek_with,
-        no_parse_bound
-    )
+    attributes(paren, bracket, brace, inside, call, parse_terminated, peek, peek_with)
 )]
 pub fn derive_parse(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
@@ -418,7 +408,7 @@ fn require_impl_parse_if_type(param: &syn::GenericParam) -> Result<TokenStream> 
         eq_token,
         default,
     } = match param {
-        Type(t) if !any_attr_allows_no_parse(&t.attrs)? => t,
+        Type(t) => t,
         param => return Ok(param.to_token_stream()),
     };
 
@@ -440,37 +430,6 @@ fn require_impl_parse_if_type(param: &syn::GenericParam) -> Result<TokenStream> 
         #( #attrs )*
         #ident #colon_token #bounds #parse_bound #eq_token #default
     })
-}
-
-// Returns true if and only if there's an attribute that's exactly `#[no_parse_bound]`
-fn any_attr_allows_no_parse(attrs: &[Attribute]) -> Result<bool> {
-    attrs
-        .iter()
-        .try_fold(false, |acc, a| Ok(acc || attr_allows_no_parse(a)?))
-}
-
-// Returns true if and only if the attribute is `#[no_parse_bound]`
-fn attr_allows_no_parse(attr: &Attribute) -> Result<bool> {
-    if let AttrStyle::Inner(_) = &attr.style {
-        return Err(syn::Error::new(
-            attr.span(),
-            "`#[no_parse_bound]` must be an outer attribute",
-        ));
-    }
-
-    let Attribute { path, tokens, .. } = attr;
-    if path.get_ident().map(ToString::to_string) != Some("no_parse_bound".into()) {
-        return Ok(false);
-    }
-
-    if !tokens.is_empty() {
-        return Err(syn::Error::new(
-            attr.span(),
-            "`#[no_parse_bound]` does not expect arguments",
-        ));
-    }
-
-    Ok(true)
 }
 
 fn convert_to_arg(param: syn::GenericParam) -> TokenStream {
