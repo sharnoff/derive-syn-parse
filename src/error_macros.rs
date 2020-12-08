@@ -22,8 +22,8 @@ macro_rules! handle_syn_result {
             Ok(value) => value,
             Err(e) => {
                 let mut ts = quote! {
-                    impl #$generics_intro syn::parse::Parse for #$ident #$generics_args #$where_clause {
-                        fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+                    impl #$generics_intro ::syn::parse::Parse for #$ident #$generics_args #$where_clause {
+                        fn parse(input: ::syn::parse::ParseStream) -> ::syn::Result<Self> {
                             unimplemented!("failed to derive `Parse`")
                         }
                     }

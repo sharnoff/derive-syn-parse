@@ -312,7 +312,7 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
 
             let macro_name = tree_kind.macro_name();
             let tree_name = tree_name(field_name);
-            parse_expr = quote_spanned! { span=> syn::#macro_name!(#tree_name in #input_source) };
+            parse_expr = quote_spanned! { span=> ::syn::#macro_name!(#tree_name in #input_source) };
         }
     }
 
