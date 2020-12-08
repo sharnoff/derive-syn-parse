@@ -26,6 +26,8 @@
 //! ```
 //!
 //! The derived implementation of `Parse` always parses in the order that the fields are given.
+//! **Note that deriving `Parse` is also available on enums.** For more information, see the
+//! [dedicated section](#enum-parsing).
 //!
 //! This crate is intended for users who are already making heavy use of `syn`.
 //!
@@ -56,7 +58,7 @@
 //!     }
 //! }
 //! ```
-//! This is really repetetive! Ideally, we'd like to just `#[derive(Parse)]` and have it work. And
+//! This is really repetitive! Ideally, we'd like to just `#[derive(Parse)]` and have it work. And
 //! so we can! (for the most part) Adding `#[derive(Parse)]` to the previous struct produces an
 //! equivalent implementation of `Parse`:
 //! ```
@@ -71,8 +73,52 @@
 //! }
 //! ```
 //!
-//! Of course, there are more complicated cases. This is mainly covered immediately below in the
-//! 'Advanced usage' section.
+//! Of course, there are more complicated cases. This is mainly covered below in the 'Advanced
+//! usage' section.
+//!
+//! ## Enum parsing
+//!
+//! Parsing `enum`s is a complex feature. When writing manual implementations of `Parse`, it
+//! doesn't come up as often, but there are also typically *many* ways to do it: `syn` provides
+//! both forking the `ParseBuffer` *and* peeking in order to handle this, with peeking to be
+//! preferred if possible.
+//!
+//! This library does not support forking; it tends to suffer from poor error messages and general
+//! inefficiency. That being said, manual implementations of `Parse` can and should be written when
+//! this library is insufficient.
+//!
+//! We *do* support peeking - in two different ways. These are handled by the `#[peek]` and
+//! `#[peek_with]` attributes, which are required on- and only available for `enum` variants. The
+//! general syntax can be thought of as:
+//!
+//! ```text
+//! #[peek($TYPE, name = $NAME)]
+//! ```
+//! and
+//! ```text
+//! #[peek_with($EXPR, name = $NAME)]
+//! ```
+//! where `$TYPE`, `$EXPR`, and `$NAME` are meta-variables that correspond to the particular input
+//! given to the attribute.
+//!
+//! These can be thought of as translating literally to:
+//! ```ignore
+//! if input.peek($TYPE) {
+//!     // parse variant
+//! } else {
+//!     // parse other variants
+//! }
+//! ```
+//! and
+//! ```ignore
+//! if ($EXPR)(input) {
+//!     // parse variant
+//! } else {
+//!     // parse other variants
+//! }
+//! ```
+//! respectively. If no variant matches, we produce an error message, using the names that were
+//! provided for each type.
 //!
 //! ## Advanced usage
 //!
@@ -93,7 +139,8 @@
 //! - [`#[inside]`](#inside)
 //! - [`#[call]`](#call)
 //! - [`#[parse_terminated]`](#parse_terminated)
-//! - [`#[no_parse_bound]`](#no_parse_bound)
+//! - [`#[peek]`](#enum-parsing)
+//! - [`#[peek_with]`](#enum-parsing)
 //!
 //! ### `#[paren]` / `#[bracket]` / `#[brace]`
 //!
@@ -275,13 +322,6 @@
 //! ```
 //!
 //! [`Punctuated`]: syn::punctuated::Punctuated
-//!
-//! ## Known limitations
-//!
-//! The derive macro is only available for structs. While actually possible, it's currently
-//! considered outside of the scope of this crate to generate implementations of `Parse` for enums.
-//! This is because they will always require some kind of lookahead (either via
-//! [`ParseStream::peek`] or [`ParseStream::fork`]).
 //!
 //! [`ParseStream::call`]: syn::parse::ParseBuffer::call
 //! [`ParseStream::parse_terminated`]: syn::parse::ParseBuffer::parse_terminated
