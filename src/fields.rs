@@ -55,6 +55,7 @@ enum ParseMethod {
 enum PeekAttr {
     Peek(Expr),
     PeekWith(Expr),
+    ParseIf(Expr),
 }
 
 impl ParseMethod {
@@ -136,10 +137,11 @@ fn parse_field((idx, field): (usize, syn::Field)) -> Result<TokenStream> {
 
     // convert the Option to an iterator, so we can declare variables conditionally:
     let required_var_defs = required_var_defs.into_iter();
+    let field_ty = field.ty;
     Ok(quote_spanned! {
         span=>
         #( let #required_var_defs; )*
-        let #assigned_name = #parse_expr;
+        let #assigned_name: #field_ty = #parse_expr;
     })
 }
 
@@ -237,6 +239,13 @@ fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
                 }),
             )
         }
+        "parse_if" => {
+            expect_outer_attr!();
+            Some(
+                syn::parse2(attr.tokens)
+                    .map(move |id: Inside<_>| (FieldAttr::Peek(PeekAttr::ParseIf(id.inner)), span)),
+            )
+        }
         _ => None,
     }
 }
@@ -323,6 +332,10 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
                 false => None,
             }),
             PeekAttr::PeekWith(expr) => quote_spanned!(expr.span()=> match (#expr)(#input_source) {
+                true => Some(#parse_expr),
+                false => None,
+            }),
+            PeekAttr::ParseIf(expr) => quote_spanned!(expr.span()=> match #expr {
                 true => Some(#parse_expr),
                 false => None,
             }),

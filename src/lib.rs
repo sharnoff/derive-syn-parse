@@ -137,6 +137,7 @@
 //! - [`#[bracket]`](#paren--braket--brace)
 //! - [`#[brace]`](#paren--bracket--brace)
 //! - [`#[inside]`](#inside)
+//! - [`#[parse_if]`](#conditional-parsing)
 //! - [`#[call]`](#call)
 //! - [`#[parse_terminated]`](#parse_terminated)
 //! - [`#[peek]`](#enum-parsing)
@@ -229,6 +230,66 @@
 //!             expr: bracket.parse()?,
 //!         })
 //!     }
+//! }
+//! ```
+//!
+//! ### Conditional parsing
+//!
+//! When implementing `Parse` for structs, it is occasionally the case that certain fields are
+//! optional - or should only be parsed under certain circumstances. There are attributes for that!
+//!
+//! Say we want to represent `enum`s with the following, different syntax:
+//! ```text
+//! enum Foo {
+//!     Bar: Baz,
+//!     Qux,
+//! }
+//! ```
+//! where the equivalent Rust code would be:
+//! ```
+//! # type Baz = ();
+//! enum Foo {
+//!     Bar(Baz),
+//!     Qux,
+//! }
+//! ```
+//!
+//! There's two ways we could parse the variants here -- either with a colon (and following type),
+//! or without! To handle this, we can write:
+//!
+//! ```
+//! # use syn::{Type, Ident, Token};
+//! # use derive_syn_parse::Parse;
+//! #[derive(Parse)]
+//! struct Variant {
+//!     name: Ident,
+//!     // `syn` already supports optional parsing of simple tokens
+//!     colon: Option<Token![:]>,
+//!     // We only want to parse the trailing type if there's a colon:
+//!     #[parse_if(colon.is_some())]
+//!     ty: Option<Type>,
+//! }
+//! ```
+//!
+//! Note that in this case, `ty` *must* be an `Option`. In addition to conditional parsing based on
+//! the values of what's already been parsed, we can also peek - just as described above in the
+//! section on [parsing enums](#enum-parsing). The only difference here is that we do not need to
+//! provide a name for the optional field. We could have equally implemented the above as:
+//!
+//! ```
+//! # use syn::{Type, Ident, Token};
+//! # use derive_syn_parse::Parse;
+//! #[derive(Parse)]
+//! struct Variant {
+//!     name: Ident,
+//!     #[peek(Token![:])]
+//!     ty: Option<VariantType>,
+//! }
+//!
+//! #[derive(Parse)]
+//! struct VariantType {
+//!     colon: Token![:],
+//!     ty: Type,
 //! }
 //! ```
 //!
@@ -343,7 +404,17 @@ mod variants;
 
 #[proc_macro_derive(
     Parse,
-    attributes(paren, bracket, brace, inside, call, parse_terminated, peek, peek_with)
+    attributes(
+        paren,
+        bracket,
+        brace,
+        inside,
+        call,
+        parse_terminated,
+        peek,
+        peek_with,
+        parse_if
+    )
 )]
 pub fn derive_parse(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
