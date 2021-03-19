@@ -402,18 +402,16 @@ mod fields;
 mod tests;
 mod variants;
 
+#[rustfmt::skip]
 #[proc_macro_derive(
     Parse,
     attributes(
-        paren,
-        bracket,
-        brace,
+        paren, bracket, brace,
         inside,
-        call,
-        parse_terminated,
-        peek,
-        peek_with,
-        parse_if
+        call, parse_terminated,
+        peek, peek_with,
+        parse_if,
+        prefix, postfix,
     )
 )]
 pub fn derive_parse(item: proc_macro::TokenStream) -> proc_macro::TokenStream {

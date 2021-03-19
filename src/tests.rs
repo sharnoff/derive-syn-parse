@@ -174,4 +174,95 @@ test_all! {
             }
         }"
     },
+    simple_prefix: {
+        "struct Field {
+            name: Ident,
+            #[prefix(Token![:])]
+            ty: Type,
+        }",
+        "impl ::syn::parse::Parse for Field {
+            fn parse(__parse_input: ::syn::parse::ParseStream) -> ::syn::Result<Self> {
+                let name: Ident = __parse_input.parse()?;
+                let _: Token![:] = __parse_input.parse()?;
+                let ty: Type = __parse_input.parse()?;
+
+                Ok(Field {
+                    name,
+                    ty,
+                })
+            }
+        }",
+    },
+    simple_postfix: {
+        "struct Field {
+            #[postfix(Token![:])]
+            name: Ident,
+            ty: Type,
+        }",
+        "impl ::syn::parse::Parse for Field {
+            fn parse(__parse_input: ::syn::parse::ParseStream) -> ::syn::Result<Self> {
+                let name: Ident = __parse_input.parse()?;
+                let _: Token![:] = __parse_input.parse()?;
+                let ty: Type = __parse_input.parse()?;
+
+                Ok(Field {
+                    name,
+                    ty,
+                })
+            }
+        }",
+    },
+    prefix_as_parse_if: {
+        "struct Field {
+            name: Ident,
+            #[prefix(Token![:])]
+            ty: Type,
+            #[prefix(Option<Token![=]> as eq_token)]
+            #[parse_if(eq_token.is_some())]
+            value: Option<Expr>,
+        }",
+        "impl ::syn::parse::Parse for Field {
+            fn parse(__parse_input: ::syn::parse::ParseStream) -> ::syn::Result<Self> {
+                let name: Ident = __parse_input.parse()?;
+                let _: Token![:] = __parse_input.parse()?;
+                let ty: Type = __parse_input.parse()?;
+                let eq_token: Option<Token![=]> = __parse_input.parse()?;
+                let value: Option<Expr> = match eq_token.is_some() {
+                    true => Some(__parse_input.parse()?),
+                    false => None,
+                };
+
+                Ok(Field {
+                    name,
+                    ty,
+                    value,
+                })
+            }
+        }",
+    },
+    prefix_inside: {
+        // Something like `(=> x)`
+        "struct Foo {
+            #[paren]
+            paren: token::Paren,
+            #[prefix(Token![=>] in paren)]
+            #[inside(paren)]
+            ident: Ident,
+        }",
+        "impl ::syn::parse::Parse for Foo {
+            fn parse(__parse_input: ::syn::parse::ParseStream) -> ::syn::Result<Self> {
+                let __paren_backing_token_stream;
+                let paren: token::Paren =
+                    ::syn::parenthesized!(__paren_backing_token_stream in __parse_input);
+
+                let _: Token![=>] = __paren_backing_token_stream.parse()?;
+                let ident: Ident = __paren_backing_token_stream.parse()?;
+                
+                Ok(Foo {
+                    paren,
+                    ident,
+                })
+            }
+        }"
+    },
 }
