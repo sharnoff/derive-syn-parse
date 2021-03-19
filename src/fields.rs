@@ -5,7 +5,7 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::convert::{TryFrom, TryInto};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{parenthesized, AttrStyle, Attribute, Expr, Fields, Ident, Path, Result, Token};
+use syn::{parenthesized, AttrStyle, Attribute, Expr, Fields, Ident, Path, Result, Token, Type};
 
 pub(crate) fn generate_fn_body(
     base_tyname: &impl ToTokens,
@@ -37,6 +37,8 @@ enum FieldAttr {
     Call(Path),
     ParseTerminated(Path),
     Peek(PeekAttr),
+    Prefix(NeighborAttr),
+    Postfix(NeighborAttr),
 }
 
 enum TreeKind {
@@ -58,6 +60,41 @@ enum PeekAttr {
     ParseIf(Expr),
 }
 
+// An attribute that's either a #[prefix] or #[postfix] directive. These can either be
+// free-standing (i.e. discarded immediately after parsing) or named - saved for later parsing.
+//
+// They can additionally be specified as inside a particular token stream, so the full syntax is:
+//
+//   "#[prefix(" <Type> [ "as" <Ident> ] [ "in" <Ident> ] ")]"
+struct NeighborAttr {
+    parse_ty: Type,
+    maybe_named: Option<Ident>,
+    maybe_inside: Option<Ident>,
+}
+
+impl Parse for NeighborAttr {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let parse_ty = input.parse()?;
+        let as_token: Option<Token![as]> = input.parse()?;
+        let maybe_named = match as_token.is_some() {
+            true => Some(input.parse()?),
+            false => None,
+        };
+
+        let in_token: Option<Token![in]> = input.parse()?;
+        let maybe_inside = match in_token.is_some() {
+            true => Some(input.parse()?),
+            false => None,
+        };
+
+        Ok(NeighborAttr {
+            parse_ty,
+            maybe_named,
+            maybe_inside,
+        })
+    }
+}
+
 impl ParseMethod {
     fn is_default(&self) -> bool {
         matches!(self, Self::Default)
@@ -65,6 +102,8 @@ impl ParseMethod {
 }
 
 struct FieldAttrs {
+    prefix: Vec<NeighborAttr>,
+    postfix: Vec<NeighborAttr>,
     inside: Option<Ident>,
     parse_method: ParseMethod,
     peek: Option<PeekAttr>,
@@ -73,8 +112,8 @@ struct FieldAttrs {
 struct ParseField {
     required_var_defs: Option<Ident>,
     parse_expr: TokenStream,
-    // input_source: Ident,
-    // parse_method: TokenStream,
+    pre_parse: TokenStream,
+    post_parse: TokenStream,
 }
 
 // This needs to return tokenstreams because tuple structs use integer indices as field names
@@ -133,6 +172,8 @@ fn parse_field((idx, field): (usize, syn::Field)) -> Result<TokenStream> {
     let ParseField {
         required_var_defs,
         parse_expr,
+        pre_parse,
+        post_parse,
     } = handle_field_attrs(&assigned_name, field.ty.span(), attrs);
 
     // convert the Option to an iterator, so we can declare variables conditionally:
@@ -141,7 +182,9 @@ fn parse_field((idx, field): (usize, syn::Field)) -> Result<TokenStream> {
     Ok(quote_spanned! {
         span=>
         #( let #required_var_defs; )*
+        #pre_parse
         let #assigned_name: #field_ty = #parse_expr;
+        #post_parse
     })
 }
 
@@ -246,6 +289,20 @@ fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
                     .map(move |id: Inside<_>| (FieldAttr::Peek(PeekAttr::ParseIf(id.inner)), span)),
             )
         }
+        "prefix" => {
+            expect_outer_attr!();
+            Some(
+                syn::parse2(attr.tokens)
+                    .map(move |id: Inside<_>| (FieldAttr::Prefix(id.inner), span)),
+            )
+        }
+        "postfix" => {
+            expect_outer_attr!();
+            Some(
+                syn::parse2(attr.tokens)
+                    .map(move |id: Inside<_>| (FieldAttr::Postfix(id.inner), span)),
+            )
+        }
         _ => None,
     }
 }
@@ -254,11 +311,13 @@ impl TryFrom<Vec<(FieldAttr, Span)>> for FieldAttrs {
     type Error = syn::Error;
 
     fn try_from(vec: Vec<(FieldAttr, Span)>) -> Result<Self> {
-        use FieldAttr::{Call, Inside, ParseTerminated, Peek, Tree};
+        use FieldAttr::{Call, Inside, ParseTerminated, Peek, Postfix, Prefix, Tree};
 
         let mut inside = None;
         let mut peek = None;
         let mut parse_method = ParseMethod::Default;
+        let mut prefix = Vec::new();
+        let mut postfix = Vec::new();
 
         for (attr, span) in vec {
             match attr {
@@ -280,10 +339,29 @@ impl TryFrom<Vec<(FieldAttr, Span)>> for FieldAttrs {
                 Tree(kind) => parse_method = ParseMethod::Tree(kind, span),
                 Inside(name) => inside = Some(name),
                 Peek(p) => peek = Some(p),
+
+                Prefix(_) if inside.is_some() => {
+                    return Err(syn::Error::new(
+                        span,
+                        "`#[prefix]` cannot be used after `#[inside]`. Perhaps try `#[prefix(<Type> in <token>)]`?",
+                    ));
+                }
+
+                Postfix(_) if inside.is_some() => {
+                    return Err(syn::Error::new(
+                        span,
+                        "`#[postfix]` cannot be used after `#[inside]`. Perhaps try `#[prefix(<Type> in <token>)]`?",
+                    ));
+                }
+
+                Prefix(attr) => prefix.push(attr),
+                Postfix(attr) => postfix.push(attr),
             }
         }
 
         Ok(FieldAttrs {
+            prefix,
+            postfix,
             inside,
             parse_method,
             peek,
@@ -342,9 +420,29 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
         };
     }
 
+    let neighbor_map = |na: NeighborAttr| -> TokenStream {
+        let assigned_name = na
+            .maybe_named
+            .unwrap_or_else(|| Ident::new("_", Span::call_site()));
+        let source = na
+            .maybe_inside
+            .as_ref()
+            .map(tree_name)
+            .unwrap_or_else(crate::parse_input);
+        let parse_ty = na.parse_ty;
+        quote! {
+            let #assigned_name: #parse_ty = #source.parse()?;
+        }
+    };
+
+    let pre_parse = attrs.prefix.into_iter().map(neighbor_map).collect();
+    let post_parse = attrs.postfix.into_iter().map(neighbor_map).collect();
+
     ParseField {
         required_var_defs,
         parse_expr,
+        pre_parse,
+        post_parse,
     }
 }
 
