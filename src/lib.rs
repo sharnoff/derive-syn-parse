@@ -12,7 +12,7 @@
 //! # Cargo.toml
 //!
 //! [dependencies]
-//! derive-syn-parse = "0.1"
+//! derive-syn-parse = "0.1.5"
 //! ```
 //!
 //! ```
