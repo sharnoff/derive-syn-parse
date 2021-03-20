@@ -74,22 +74,36 @@
 //! ```
 //!
 //! Of course, there are more complicated cases. This is mainly covered below in the 'Advanced
-//! usage' section.
+//! Usage' section.
 //!
-//! ## Enum parsing
+//! ## Advanced Usage
 //!
-//! Parsing `enum`s is a complex feature. When writing manual implementations of `Parse`, it
-//! doesn't come up as often, but there are also typically *many* ways to do it: `syn` provides
-//! both forking the `ParseBuffer` *and* peeking in order to handle this, with peeking to be
-//! preferred if possible.
+//! There are a few different facilities provided here, including:
+//! * Enum variant parsing,
+//! * Conditional field parsing,
+//! * Parsing within token trees (parens, brackets, etc.),
+//! * And much more!
+//!
+//! Each of the below sections can be expanded to view detailed information about how to use a
+//! particular component. Be warned - each section assumes a fair amount of knowledge about the relevant
+//! `syn` features.
+//
+//
+// ---------- SECTION: Enum Parsing ----------
+//
+//! <details><summary><b>➤ Enum parsing</b></summary>
+//!
+//! Parsing enums is a complex feature. When writing manual implementations of
+//! `Parse`, it doesn't come up as often, but there are also typically *many* ways to do it:
+//! `syn` provides both forking the `ParseBuffer` *and* peeking to handle this, with the suggestion that
+//! peeking be preferred.
 //!
 //! This library does not support forking; it tends to suffer from poor error messages and general
-//! inefficiency. That being said, manual implementations of `Parse` can and should be written when
-//! this library is insufficient.
+//! inefficiency. That being said, manual implementations of `Parse` can and should be written in the
+//! rare cases when this library is insufficient.
 //!
-//! We *do* support peeking - in two different ways. These are handled by the `#[peek]` and
-//! `#[peek_with]` attributes, which are required on- and only available for `enum` variants. The
-//! general syntax can be thought of as:
+//! We support peeking in a couple differnet ways - with the `#[peek]` and `#[peek_with]` attributes.
+//! One peeking attribute is required for each `enum` variant. The general syntax tends to look like:
 //!
 //! ```text
 //! #[peek($TYPE, name = $NAME)]
@@ -98,11 +112,11 @@
 //! ```text
 //! #[peek_with($EXPR, name = $NAME)]
 //! ```
-//! where `$TYPE`, `$EXPR`, and `$NAME` are meta-variables that correspond to the particular input
-//! given to the attribute.
+//! The name is provided in order to construct useful error messages when input doesn't match any of the
+//! variants.
 //!
-//! These can be thought of as translating literally to:
-//! ```ignore
+//! These essentially translate to:
+//! ```
 //! if input.peek($TYPE) {
 //!     // parse variant
 //! } else {
@@ -110,156 +124,148 @@
 //! }
 //! ```
 //! and
-//! ```ignore
+//! ```
 //! if ($EXPR)(input) {
 //!     // parse variant
 //! } else {
 //!     // parse other variants
 //! }
 //! ```
-//! respectively. If no variant matches, we produce an error message, using the names that were
-//! provided for each type.
+//! </details>
+//
+//
+// ---------- SECTION: Token Trees ----------
+//
+//! <details><summary><b>➤ Token Trees (parens, brackets, braces)</b></summary>
 //!
-//! ## Advanced usage
+//! If derive macros had access to type information, we could auto-detect when a field contains any
+//! of `syn::token::{Paren, Bracket, Brace}`. Unfortunately, we can't - and these don't implement
+//! `Parse`, so they each have their own special attribute to mark them: `#[paren]`, `#[bracket]`,
+//! and `#[brace]`, respectively.
 //!
-//! There's a moderate collection of helper attributes that can be applied to fields to customize
-//! the generated implementation of `Parse`. Each of these are demonstrated with the
-//! implementation that they produce. Please note that the produced implementation is typically
-//! *not* identical to what's shown here.
-//!
-//! All of the examples are fairly contrived, I know. The reality of the matter is that - if you
-//! would find this useful - it's probably true that your use-case is much more complicated than
-//! would make sense for a short example. (If it isn't, let me know! It would be great to include
-//! it here!)
-//!
-//! ### List of helper attributes
-//! - [`#[paren]`](#paren--bracket--brace)
-//! - [`#[bracket]`](#paren--braket--brace)
-//! - [`#[brace]`](#paren--bracket--brace)
-//! - [`#[inside]`](#inside)
-//! - [`#[parse_if]`](#conditional-parsing)
-//! - [`#[call]`](#call)
-//! - [`#[parse_terminated]`](#parse_terminated)
-//! - [`#[peek]`](#enum-parsing)
-//! - [`#[peek_with]`](#enum-parsing)
-//!
-//! ### `#[paren]` / `#[bracket]` / `#[brace]`
-//!
-//! Because the derive macro has no fool-proof method for determining by itself whether a field type
-//! is any of `syn::token::{Paren, Bracket, Brace}`, these three serve to provide that information
-//! instead.
-//!
-//! These are typically used in conjunction with [`#[inside]`](#inside).
+//! These are typically used with the `#[inside]` attribute, which indicates that a field should be
+//! parsed inside a particular named token tree. This might look like:
 //!
 //! ```
-//! # use syn::{Ident, token::Paren, Expr};
-//! # use derive_syn_parse::Parse;
+//! use derive_syn_parse::Parse;
+//! use syn::{Ident, token, Expr};
 //!
-//! // A single-argument function call
+//! // Parses a simple function call - something like
 //! //
-//! //     so_long(and_thanks + for_all * the_fish)
+//! //   so_long(and_thanks + for_all * the_fish)
 //! #[derive(Parse)]
 //! struct SingleArgFn {
-//!     ident: Ident,
+//!     name: Ident,
 //!     #[paren]
-//!     paren_token: Paren,
-//!     #[inside(paren_token)]
+//!     arg_paren: token::Paren,
+//!     #[inside(arg_paren)]
 //!     arg: Expr,
 //! }
 //! ```
-//! produces
+//!
+//! The `#[inside]` attribute can - of course - be repeated with multiple token trees, though this
+//! may not necessarily produce the most readable type definitions.
+//!
+//! For reference, the above code produces an implementation equivalent to:
 //! ```
-//! # use syn::parse::{Parse, ParseStream};
-//! # use syn::{Ident, token::Paren, Expr};
-//! # struct SingleArgFn { ident: Ident, paren_token: Paren, arg: Expr }
+//! # use syn::{Ident, token, Expr};
+//! # struct SingleArgFn { name: Ident, arg_paren: token::Paren, arg: Expr }
+//!
+//! use syn::parse::{Parse, ParseStream};
 //!
 //! impl Parse for SingleArgFn {
 //!     fn parse(input: ParseStream) -> syn::Result<Self> {
 //!         let paren;
 //!         Ok(SingleArgFn {
-//!             ident: input.parse()?,
-//!             paren_token: syn::parenthesized!(paren in input),
+//!             name: input.parse()?,
+//!             arg_paren: syn::parenthesized!(paren in input),
 //!             arg: paren.parse()?,
 //!         })
 //!     }
 //! }
 //! ```
 //!
-//! ### `#[inside(..)]`
+//! </details>
+//
+//
+// ---------- SECTION: Custom parsing (call, parse_terminated) ----------
+//
+//! <details><summary><b>➤ Custom parse functions (<code>#[call]</code>, <code>#[parse_terminated]</code>)</b></summary>
 //!
-//! This is a companion to `#[paren]`/`#[bracket]`/`#[brace]` - given a field name to use, this
-//! attribute indicates that the field should be parsed using a previous field as the source.
+//! Not every type worth parsing implements `Parse`, but we still might want to parse them - things
+//! like [`Vec<Attribute>`] or any [`Punctuated<_, _>`] type. In these cases, the available
+//! attributes mirror the methods on [`ParseBuffer`].
 //!
+//! [`ParseBuffer`]: syn::parse::ParseBuffer
+//!
+//! For `#[parse_terminated]`, there aren't any parameters that can be specified - it's common
+//! enough that it's provided for those `Punctuated` fields.
+//!
+//! Alternatively, `#[call]` has the syntax `#[call( EXPR )]`, where `EXPR` is *any expression*
+//! implementing `FnOnce(ParseBuffer) -> syn::Result<T>`. Typically, this might be something like:
 //! ```
-//! # use derive_syn_parse::Parse;
-//! use syn::{Type, Token, Expr};
-//! use syn::token::Bracket;
+//! use syn::{Attribute, Ident, Token};
 //!
-//! // An array type required to have a length
+//! // Parses a unit struct with attributes.
 //! //
-//! //     [i32; 4]
+//! //     #[derive(Copy, Clone)]
+//! //     struct S;
 //! #[derive(Parse)]
-//! struct KnownLengthArrayType {
-//!     #[bracket]
-//!     bracket_token: Bracket,
-//!
-//!     // Note that `#[inside(..)]` must be applied to all of the fields that
-//!     // are in the brackets!
-//!     #[inside(bracket_token)]
-//!     ty: Type,
-//!     #[inside(bracket_token)]
+//! struct UnitStruct {
+//!     #[call(Attribute::parse_outer)]
+//!     attrs: Vec<Attribute>,
+//!     struct_token: Token![struct],
+//!     name: Ident,
 //!     semi_token: Token![;],
-//!     #[inside(bracket_token)]
-//!     expr: Expr,
-//! }
-//! ```
-//! produces
-//! ```
-//! # use syn::parse::{Parse, ParseStream};
-//! # use syn::{Type, Token, Expr};
-//! # use syn::token::Bracket;
-//! # struct KnownLengthArrayType { bracket_token: Bracket, ty: Type, semi_token: Token![;], expr: Expr }
-//!
-//! impl Parse for KnownLengthArrayType {
-//!     fn parse(input: ParseStream) -> syn::Result<Self> {
-//!         let bracket;
-//!         Ok(KnownLengthArrayType {
-//!             bracket_token: syn::bracketed!(bracket in input),
-//!             ty: bracket.parse()?,
-//!             semi_token: bracket.parse()?,
-//!             expr: bracket.parse()?,
-//!         })
-//!     }
 //! }
 //! ```
 //!
-//! ### Conditional parsing
+//! Unlike with [`ParseBuffer::call`], which only accepts functions that are
+//! `fn(ParseStream) -> syn::Result<T>`, `#[call]` allows any expression that we can call with the
+//! `ParseBuffer`. So one could - hypothetically - implement `#[parse_if]` with this:
+//! ```
+//! struct Foo {
+//!     a: Option<Token![=>]>,
+//!     #[call(|inp| match &a { Some(_) => Ok(Some(inp.parse()?)), None => Ok(None) })]
+//!     b: Option<Bar>,
+//! }
+//! ```
+//! Though it's probably best to just use `#[parse_if]` :)
+//!
+//! [`Vec<Attribute>`]: syn::Attribute
+//! [`Punctuated<_, _>`]: syn::punctuated::Punctuated
+//! [`ParseBuffer::call`]: syn::parse::ParseBuffer
+//!
+//! </details>
+//
+//
+// ---------- SECTION: Conditional field parsing ----------
+//
+//! <details><summary><b>➤ Conditional field parsing (<code>#[parse_if]</code>, <code>#[peek]</code>)</b></summary>
 //!
 //! When implementing `Parse` for structs, it is occasionally the case that certain fields are
 //! optional - or should only be parsed under certain circumstances. There are attributes for that!
 //!
-//! Say we want to represent `enum`s with the following, different syntax:
-//! ```text
+//! Say we want to parse enums with the following, different syntax:
+//!
+//! ```
 //! enum Foo {
 //!     Bar: Baz,
 //!     Qux,
 //! }
 //! ```
 //! where the equivalent Rust code would be:
+//!
 //! ```
-//! # type Baz = ();
 //! enum Foo {
 //!     Bar(Baz),
 //!     Qux,
 //! }
 //! ```
-//!
-//! There's two ways we could parse the variants here -- either with a colon (and following type),
-//! or without! To handle this, we can write:
+//! There’s two ways we could parse the variants here – either with a colon and following type or
+//! with no colon or type. To handle this, we can write:
 //!
 //! ```
-//! # use syn::{Type, Ident, Token};
-//! # use derive_syn_parse::Parse;
 //! #[derive(Parse)]
 //! struct Variant {
 //!     name: Ident,
@@ -270,15 +276,12 @@
 //!     ty: Option<Type>,
 //! }
 //! ```
-//!
-//! Note that in this case, `ty` *must* be an `Option`. In addition to conditional parsing based on
-//! the values of what's already been parsed, we can also peek - just as described above in the
-//! section on [parsing enums](#enum-parsing). The only difference here is that we do not need to
-//! provide a name for the optional field. We could have equally implemented the above as:
+//! Note that in this case, `ty` must be an `Option`. In addition to conditional parsing based on
+//! the values of what’s already been parsed, we can also peek - just as described above in the
+//! section on parsing enums. The only difference here is that we do not need to provide a name for
+//! the optional field. We could have equally implemented the above as:
 //!
 //! ```
-//! # use syn::{Type, Ident, Token};
-//! # use derive_syn_parse::Parse;
 //! #[derive(Parse)]
 //! struct Variant {
 //!     name: Ident,
@@ -293,101 +296,99 @@
 //! }
 //! ```
 //!
-//! ### `#[call(..)]`
+//! </details>
+//
+//
+// ---------- SECTION: Prefix & postfix ----------
+//
+//! <details> <summary><b>➤ Temporary parses: Prefix & postfix </b></summary>
 //!
-//! Given a path to a function, this attribute specifies that the value of the field should be
-//! instead calculated by a call to `input.parse(..)` with a given path. The best example is taken
-//! straight from the [`syn` documentation itself](syn::parse::ParseBuffer::call):
+//! A common pattern that sometimes occurs when deriving `Parse` implementations is to have many
+//! unused punctuation fields - imagine a hypothetical implementation of field parsing with default
+//! values:
+//!
 //! ```
-//! # use derive_syn_parse::Parse;
-//! use syn::{Attribute, Ident, Token};
-//!
-//! // Parses a unit struct with attributes.
+//! // A field with default values, parsing something like:
 //! //
-//! //     #[path = "s.tmpl"]
-//! //     struct S;
+//! //   foo: Bar = Bar::new()
 //! #[derive(Parse)]
-//! struct UnitStruct {
-//!     #[call(Attribute::parse_outer)]
-//!     attrs: Vec<Attribute>,
-//!     struct_token: Token![struct],
-//!     name: Ident,
-//!     semi_token: Token![;],
-//! }
-//! ```
-//! produces
-//! ```
-//! # use syn::parse::{Parse, ParseStream};
-//! # use syn::{Attribute, Ident, Token};
-//! # struct UnitStruct { attrs: Vec<Attribute>, struct_token: Token![struct], name: Ident, semi_token: Token![;] }
-//!
-//! impl Parse for UnitStruct {
-//!     fn parse(input: ParseStream) -> syn::Result<Self> {
-//!         Ok(UnitStruct {
-//!             attrs: input.call(Attribute::parse_outer)?,
-//!             struct_token: input.parse()?,
-//!             name: input.parse()?,
-//!             semi_token: input.parse()?,
-//!         })
-//!     }
-//! }
-//! ```
-//!
-//!
-//! ### `#[parse_terminated(..)]`
-//!
-//! Just as we have [`#[call(..)]`](#call) for [`ParseStream::call`], we have `#[parse_terminated]`
-//! for [`ParseStream::parse_terminated`]. Here's the same example that the `ParseStream` method
-//! uses:
-//!
-//! ```
-//! # use syn::{Ident, token, Token, Type, punctuated::Punctuated};
-//! # use derive_syn_parse::Parse;
-//!
-//! // Parse a simplified tuple struct syntax like:
-//! //
-//! //     struct S(A, B);
-//! #[derive(Parse)]
-//! struct TupleStruct {
-//!     struct_token: Token![struct],
+//! struct Field {
 //!     ident: Ident,
+//!     colon: Token![:],
+//!     ty: Type,
+//!     eq: Option<Token![=]>,
+//!     #[parse_if(eq.is_some())]
+//!     expr: Option<Expr>,
+//! }
+//! ```
+//!
+//! Here, there's a couple fields that probably won't be used later - both `colon` and `eq`. We can
+//! elimitate both of these with the `#[prefix]` attribute:
+//!
+//! ```
+//! // A field with default values, parsing something like:
+//! //
+//! //   foo: Bar = Bar::new()
+//! #[derive(Parse)]
+//! struct Field {
+//!     ident: Ident,
+//!     #[prefix(Token![:])]
+//!     ty: Type,
+//!     #[prefix(Option<Token![=]> as eq)]
+//!     #[parse_if(eq.is_some())]
+//!     expr: Option<Expr>,
+//! }
+//! ```
+//!
+//! We can use `"as <Ident>"` to give a temporary name to the value - including it as a parsed
+//! value that can be referenced in other parsing clauses, but without adding it as a struct field.
+//!
+//! There's *also* a `#[postfix]` attribute, which operates very similarly to `#[prefix]`, but
+//! exists to allow unused fields at the end of the struct. In general, `#[postfix]` tends to be
+//! pretty tricky to read, so it's generally preferable to use `#[prefix]` to keep the field
+//! ordering the same as the parse order.
+//!
+//! In some cases, we might want to have both a field and its prefix parsed inside some other token
+//! tree. Like the following contrived example:
+//!
+//! ```
+//! use syn::*;
+//!
+//! // Parses.... something. Who knows if this is useful... :P
+//! //
+//! //   (=> x + 2)
+//! #[derive(Parse)]
+//! struct Funky {
 //!     #[paren]
-//!     paren_token: token::Paren,
-//!     #[inside(paren_token)]
-//!     #[parse_terminated(Type::parse)]
-//!     fields: Punctuated<Type, Token![,]>,
-//!     semi_token: Token![;],
+//!     paren: token::Paren,
+//!     #[inside(paren)]
+//!     r_arrow: Token![=>],
+//!     #[inside(paren)]
+//!     expr: Expr,
 //! }
 //! ```
-//! produces
-//! ```
-//! # use syn::parse::{Parse, ParseStream};
-//! # use syn::{Ident, token, Token, Type, punctuated::Punctuated, parenthesized};
-//! # struct TupleStruct {
-//! #     struct_token: Token![struct], ident: Ident, paren_token: token::Paren, fields: Punctuated<Type, Token![,]>, semi_token: Token![;],
-//! # }
 //!
-//! impl Parse for TupleStruct {
-//!     fn parse(input: ParseStream) -> syn::Result<Self> {
-//!         let content;
-//!         Ok(TupleStruct {
-//!             struct_token: input.parse()?,
-//!             ident: input.parse()?,
-//!             paren_token: parenthesized!(content in input),
-//!             fields: content.parse_terminated(Type::parse)?,
-//!             semi_token: input.parse()?,
-//!         })
-//!     }
+//! To remove the unused `r_arrow` field here, we have an other extra piece we can add:
+//! `"in" <Ident>"`.
+//!
+//! ```
+//! #[derive(Parse)]
+//! struct Funky {
+//!     #[paren]
+//!     paren: token::Paren,
+//!     #[prefix(Token![=>] in paren)]
+//!     #[inside(paren)]
+//!     expr: Expr,
 //! }
-//!
 //! ```
 //!
-//! [`Punctuated`]: syn::punctuated::Punctuated
+//! Note that attempting to write the `#[inside]` before `#[prefix]` is forbidden; it's less clear
+//! what the expected behavior there should be.
 //!
-//! [`ParseStream::call`]: syn::parse::ParseBuffer::call
-//! [`ParseStream::parse_terminated`]: syn::parse::ParseBuffer::parse_terminated
-//! [`ParseStream::peek`]: syn::parse::ParseBuffer::peek
-//! [`ParseStream::fork`]: syn::parse::ParseBuffer::fork
+//! Finally, when combining both `"as" <ident>` and `"in" <ident>`, they should come in that
+//! order - e.g. `#[prefix(Foo as bar in baz)]`.
+//!
+//! </details>
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned, ToTokens};
