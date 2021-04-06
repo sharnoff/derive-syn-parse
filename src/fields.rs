@@ -1,7 +1,7 @@
 //! Handling for generating a `Parse` implementation using fields
 
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned, ToTokens};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use std::convert::{TryFrom, TryInto};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
@@ -32,7 +32,7 @@ pub(crate) fn generate_fn_body(
 }
 
 enum FieldAttr {
-    Inside(Ident),
+    Inside(ParenRef),
     Tree(TreeKind),
     Call(Path),
     ParseTerminated(Path),
@@ -60,6 +60,50 @@ enum PeekAttr {
     ParseIf(Expr),
 }
 
+enum ParenRef {
+    Existing(Ident),
+    ToBeCreated(Ident, TreeKind),
+}
+
+impl ParenRef {
+    fn required_var(&self) -> Option<Ident> {
+        match self {
+            ParenRef::ToBeCreated(field_name, _) => Some(tree_name(field_name)),
+            _ => None
+        }
+    }
+
+    fn source(&self) -> TokenStream {
+        match self {
+            ParenRef::Existing(ident) => {
+                let tree_name = tree_name(ident);
+                quote! { #tree_name }
+            },
+            ParenRef::ToBeCreated(ident, tree_kind) => {
+                let span = ident.span();
+                let macro_name = tree_kind.macro_name();
+                let tree_name = tree_name(ident);
+                let input_source = crate::parse_input();
+                quote_spanned! { span=> {::syn::#macro_name!(#tree_name in #input_source); &#tree_name} }
+            },
+        }
+    }
+}
+
+impl Parse for ParenRef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let ident = input.parse::<Ident>()?;
+        let paren_name = input.parse::<Option<Ident>>()?;
+
+        if let Some(paren_name) = paren_name {
+            let tree_kind = TreeKind::from_str(&ident, Some(ident.span()))?;
+            Ok(ParenRef::ToBeCreated(paren_name, tree_kind))
+        } else {
+            Ok(ParenRef::Existing(ident))
+        }
+    }
+}
+
 // An attribute that's either a #[prefix] or #[postfix] directive. These can either be
 // free-standing (i.e. discarded immediately after parsing) or named - saved for later parsing.
 //
@@ -69,7 +113,7 @@ enum PeekAttr {
 struct NeighborAttr {
     parse_ty: Type,
     maybe_named: Option<Ident>,
-    maybe_inside: Option<Ident>,
+    maybe_inside: Option<ParenRef>,
 }
 
 impl Parse for NeighborAttr {
@@ -104,13 +148,13 @@ impl ParseMethod {
 struct FieldAttrs {
     prefix: Vec<NeighborAttr>,
     postfix: Vec<NeighborAttr>,
-    inside: Option<Ident>,
+    inside: Option<ParenRef>,
     parse_method: ParseMethod,
     peek: Option<PeekAttr>,
 }
 
 struct ParseField {
-    required_var_defs: Option<Ident>,
+    required_var_defs: Vec<Ident>,
     parse_expr: TokenStream,
     pre_parse: TokenStream,
     post_parse: TokenStream,
@@ -375,27 +419,31 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
     let input_source = attrs
         .inside
         .as_ref()
-        .map(tree_name)
-        .unwrap_or_else(crate::parse_input);
+        .map(ParenRef::source)
+        .unwrap_or_else(|| {
+            let source = crate::parse_input();
+            quote! { #source }
+        });
 
-    let required_var_defs;
+    let mut required_var_defs = Vec::new();
     let mut parse_expr;
+
+    if let Some(ParenRef::ToBeCreated(ref ident, _)) = attrs.inside {
+        required_var_defs.push(tree_name(ident));
+    }
 
     match attrs.parse_method {
         Default => {
-            required_var_defs = None;
             parse_expr = quote_spanned! { ty_span=> #input_source.parse()? };
         }
         Call(path) => {
-            required_var_defs = None;
             parse_expr = quote_spanned! { path.span()=> #input_source.call(#path)? };
         }
         ParseTerminated(path) => {
-            required_var_defs = None;
             parse_expr = quote_spanned! { path.span()=> #input_source.parse_terminated(#path)? };
         }
         Tree(tree_kind, span) => {
-            required_var_defs = Some(tree_name(field_name));
+            required_var_defs.push(tree_name(field_name));
 
             let macro_name = tree_kind.macro_name();
             let tree_name = tree_name(field_name);
@@ -424,16 +472,29 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
         let assigned_name = na
             .maybe_named
             .unwrap_or_else(|| Ident::new("_", Span::call_site()));
+        let parse_ty = &na.parse_ty;
+
+
         let source = na
             .maybe_inside
             .as_ref()
-            .map(tree_name)
-            .unwrap_or_else(crate::parse_input);
-        let parse_ty = na.parse_ty;
+            .map(ParenRef::source)
+            .unwrap_or_else(|| {
+                let source = crate::parse_input();
+                quote! { #source }
+            });
+
         quote! {
             let #assigned_name: #parse_ty = #source.parse()?;
         }
     };
+
+    let required_var_def_map = |na: &NeighborAttr| -> Option<Ident> {
+        na.maybe_inside.as_ref().and_then(ParenRef::required_var)
+    };
+
+    required_var_defs.extend(attrs.prefix.iter().filter_map(required_var_def_map));
+    required_var_defs.extend(attrs.postfix.iter().filter_map(required_var_def_map));
 
     let pre_parse = attrs.prefix.into_iter().map(neighbor_map).collect();
     let post_parse = attrs.postfix.into_iter().map(neighbor_map).collect();
@@ -451,6 +512,19 @@ fn tree_name(field_name: &Ident) -> Ident {
 }
 
 impl TreeKind {
+    fn from_str<A: ?Sized>(value: &A, span: Option<Span>) -> Result<Self>
+        where A: PartialEq<str> {
+        if value == "paren" {
+            Ok(TreeKind::Paren)
+        } else if value == "brace" {
+            Ok(TreeKind::Brace)
+        } else if value == "bracket" {
+            Ok(TreeKind::Bracket)
+        } else {
+            Err(syn::Error::new(span.unwrap_or(Span::call_site()), "expected `bracket`, `brace` or `paren` keyword"))
+        }
+    }
+
     // Gives the name of the syn macro that corresponds to attempting parse the next token as a
     // certain group
     fn macro_name(&self) -> Ident {
