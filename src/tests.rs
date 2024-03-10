@@ -1,11 +1,6 @@
 use quote::ToTokens;
 use syn::{parse2, parse_str, DeriveInput, ItemImpl};
 
-#[test]
-fn interim() {
-    nested_attrs();
-}
-
 macro_rules! test_all {
     (
         $(
