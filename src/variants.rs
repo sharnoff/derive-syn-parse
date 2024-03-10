@@ -2,7 +2,7 @@
 
 use crate::fields::generate_fn_body;
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{ToTokens, quote, quote_spanned};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::token;
@@ -151,11 +151,11 @@ fn extract_single_attr(variant_span: Span, attrs: Vec<Attribute>) -> Result<Vari
 }
 
 fn try_as_variant_attr(attr: Attribute) -> Option<Result<VariantAttr>> {
-    let name = attr.path.get_ident()?.to_string();
+    let name = attr.path().get_ident()?.to_string();
 
     match name.as_str() {
-        "peek" => Some(syn::parse2(attr.tokens).map(VariantAttr::Peek)),
-        "peek_with" => Some(syn::parse2(attr.tokens).map(VariantAttr::PeekWith)),
+        "peek" => Some(syn::parse2(attr.into_token_stream()).map(VariantAttr::Peek)),
+        "peek_with" => Some(syn::parse2(attr.into_token_stream()).map(VariantAttr::PeekWith)),
         _ => None,
     }
 }
