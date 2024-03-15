@@ -285,4 +285,29 @@ test_all! {
             }
         }
     };
+    basic_peeks: {
+        // Either a literal `fn` token, or some generic identifier
+        enum FnOrIdent {
+            #[peek(token::Fn, name = "function")]
+            Fn(token::Fn),
+            #[peek_with(|_| true, name = "identifier")]
+            Ident(Ident),
+        }
+    } => {
+        impl ::syn::parse::Parse for FnOrIdent {
+            fn parse (__parse_input: ::syn::parse::ParseStream) -> ::syn:: Result<Self> {
+                if __parse_input.peek(token::Fn) {
+                    let _field_0: token::Fn = __parse_input.parse()?;
+                    return Ok(Self::Fn(_field_0,));
+                }
+
+                if (|_| true)(__parse_input) {
+                    let _field_0: Ident = __parse_input.parse()?;
+                    return Ok(Self::Ident(_field_0,));
+                }
+
+                Err (__parse_input.error("expected either function or identifier"))
+            }
+        }
+    };
 }
