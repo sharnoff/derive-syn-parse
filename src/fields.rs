@@ -5,7 +5,7 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::convert::{TryFrom, TryInto};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{parenthesized, AttrStyle, Attribute, Expr, Fields, Ident, Path, Result, Token, Type};
+use syn::{AttrStyle, Attribute, Expr, Fields, Ident, Path, Result, Token, Type};
 
 pub(crate) fn generate_fn_body(
     base_tyname: &impl ToTokens,
@@ -189,15 +189,19 @@ fn parse_field((idx, field): (usize, syn::Field)) -> Result<TokenStream> {
 }
 
 fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
-    let name = attr.path.get_ident()?.to_string();
+    let name = attr.path().get_ident()?.to_string();
     let span = attr.span();
 
     macro_rules! expect_outer_attr {
-        () => {{
+        ($name:literal) => {{
             if let AttrStyle::Inner(_) = attr.style {
                 return Some(Err(syn::Error::new(
                     span,
-                    "this parsing attribute can only be used as an outer attribute",
+                    concat!(
+                        "the `#[",
+                        $name,
+                        "]` parsing attribute can only be used as an outer attribute"
+                    ),
                 )));
             }
         }};
@@ -206,101 +210,132 @@ fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
     #[rustfmt::skip]
     macro_rules! expect_no_attr_args {
         ($name:expr) => {{
-            if !attr.tokens.is_empty() {
-                return Some(Err(syn::Error::new(
+            use syn::Meta::*;
+            match attr.meta {
+                List(args)      =>  return Some(Err(syn::Error::new(
                     span,
-                    concat!("the ", $name, " parsing attribute does not expect any arguments"),
-                )));
+                    format!("the `#[{}]` parsing attribute does not expect arguments {:?}", $name, args.tokens.to_string()),
+                ))),
+                NameValue(val)  =>  return Some(Err(syn::Error::new(
+                    span,
+                    format!("the `#[{}]` parsing attribute does not expect value {:?}", $name, val.value.to_token_stream().to_string()),
+                ))),
+                _               =>  {}
             }
         }};
     }
 
-    struct Inside<T: Parse> {
-        _paren_token: syn::token::Paren,
-        inner: T,
+    macro_rules! expect_parenthesis {
+        ($attr_lit:literal) => {{
+            use syn::{MacroDelimiter::*, Meta};
+            match attr.meta {
+                Meta::List(ref ml) => match ml.delimiter {
+                    Paren(_) => {}
+                    Brace(_) => {
+                        return Some(Err(syn::Error::new(
+                            span,
+                            concat!(
+                                "expected parenthesis in `#[",
+                                $attr_lit,
+                                "(...)]`, found braces"
+                            ),
+                        )))
+                    }
+                    Bracket(_) => {
+                        return Some(Err(syn::Error::new(
+                            span,
+                            concat!(
+                                "expected parenthesis in `#[",
+                                $attr_lit,
+                                "(...)]`, found brackets"
+                            ),
+                        )))
+                    }
+                },
+                _ => {
+                    return Some(Err(syn::Error::new(
+                        span,
+                        concat!("expected parenthesis in `#[", $attr_lit, "(...)]`"),
+                    )))
+                }
+            }
+        }};
     }
-
-    impl<T: Parse> Parse for Inside<T> {
-        fn parse(input: ParseStream) -> Result<Self> {
-            let paren;
-            Ok(Inside {
-                _paren_token: parenthesized!(paren in input),
-                inner: paren.parse()?,
-            })
-        }
-    }
-
     match name.as_str() {
         "inside" => {
-            expect_outer_attr!();
+            expect_outer_attr!("inside(...)");
+            expect_parenthesis!("inside");
             Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::Inside(id.inner), span)),
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::Inside(id), span)),
             )
         }
         "call" => {
-            expect_outer_attr!();
-            Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::Call(id.inner), span)),
-            )
+            expect_outer_attr!("call(...)");
+            expect_parenthesis!("call");
+            Some(attr.parse_args().map(move |id| (FieldAttr::Call(id), span)))
         }
         "parse_terminated" => {
-            expect_outer_attr!();
+            expect_outer_attr!("parse_terminated(...)");
+            expect_parenthesis!("parse_terminated");
             Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::ParseTerminated(id.inner), span)),
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::ParseTerminated(id), span)),
             )
         }
         "paren" => {
-            expect_outer_attr!();
-            expect_no_attr_args!("`#[paren]`");
+            expect_outer_attr!("paren");
+            expect_no_attr_args!("paren");
             Some(Ok((FieldAttr::Tree(TreeKind::Paren), span)))
         }
         "bracket" => {
-            expect_outer_attr!();
-            expect_no_attr_args!("`#[bracket]`");
+            expect_outer_attr!("bracket");
+            expect_no_attr_args!("bracket");
             Some(Ok((FieldAttr::Tree(TreeKind::Bracket), span)))
         }
         "brace" => {
-            expect_outer_attr!();
-            expect_no_attr_args!("`#[brace]`");
+            expect_outer_attr!("brace");
+            expect_no_attr_args!("brace");
             Some(Ok((FieldAttr::Tree(TreeKind::Brace), span)))
         }
         "peek" => {
-            expect_outer_attr!();
+            expect_outer_attr!("peek(...)");
+            expect_parenthesis!("peek");
             Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::Peek(PeekAttr::Peek(id.inner)), span)),
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::Peek(PeekAttr::Peek(id)), span)),
             )
         }
         "peek_with" => {
-            expect_outer_attr!();
+            expect_outer_attr!("peek_with(...)");
+            expect_parenthesis!("peek_with");
             Some(
-                syn::parse2(attr.tokens).map(move |id: Inside<_>| {
-                    (FieldAttr::Peek(PeekAttr::PeekWith(id.inner)), span)
-                }),
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::Peek(PeekAttr::PeekWith(id)), span)),
             )
         }
         "parse_if" => {
-            expect_outer_attr!();
+            expect_outer_attr!("parse_if(...)");
+            expect_parenthesis!("parse_if");
             Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::Peek(PeekAttr::ParseIf(id.inner)), span)),
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::Peek(PeekAttr::ParseIf(id)), span)),
             )
         }
         "prefix" => {
-            expect_outer_attr!();
+            expect_outer_attr!("prefix(...)");
+            expect_parenthesis!("prefix");
             Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::Prefix(id.inner), span)),
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::Prefix(id), span)),
             )
         }
         "postfix" => {
-            expect_outer_attr!();
+            expect_outer_attr!("postifx(...)");
+            expect_parenthesis!("postfix");
             Some(
-                syn::parse2(attr.tokens)
-                    .map(move |id: Inside<_>| (FieldAttr::Postfix(id.inner), span)),
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::Postfix(id), span)),
             )
         }
         _ => None,
