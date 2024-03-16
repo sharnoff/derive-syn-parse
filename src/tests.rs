@@ -16,7 +16,7 @@ macro_rules! test_all {
         fn $test_name() {
             let input: DeriveInput = parse_str(stringify!($($input)*)).expect("failed to parse input as `DeriveInput`");
             let expected_str = stringify!($($output)*);
-            let expected: ItemImpl = parse_str(expected_str).expect("failed to parse output as `ItemImpl`");
+            let expected: ItemImpl = parse_str(expected_str).expect("failed to parse expected output as `ItemImpl`");
 
             let output_tokens = crate::derive_parse_internal(input);
             let output: ItemImpl = parse2(output_tokens.clone())
@@ -28,7 +28,7 @@ macro_rules! test_all {
 
             if output != expected {
                 panic!(
-                    "output != expected\noutput = {:?},\nexpected = {:?}",
+                    "output != expected\noutput   = {:?},\nexpected = {:?}",
                     output_tokens.to_string(),
                     expected.to_token_stream().to_string(),
                 )
