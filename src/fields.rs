@@ -197,7 +197,11 @@ fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
             if let AttrStyle::Inner(_) = attr.style {
                 return Some(Err(syn::Error::new(
                     span,
-                    concat!("the `#[", $name, "]` parsing attribute can only be used as an outer attribute"),
+                    concat!(
+                        "the `#[",
+                        $name,
+                        "]` parsing attribute can only be used as an outer attribute"
+                    ),
                 )));
             }
         }};
@@ -223,23 +227,37 @@ fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
 
     macro_rules! expect_parenthesis {
         ($attr_lit:literal) => {{
-            use syn::{Meta, MacroDelimiter::*};
+            use syn::{MacroDelimiter::*, Meta};
             match attr.meta {
-                Meta::List(ref ml)  =>  match ml.delimiter {
-                    Paren(_)    =>  {},
-                    Brace(_)    =>  return Some(Err(syn::Error::new(
-                        span,
-                        concat!("expected parenthesis in `#[", $attr_lit, "(...)]`, found braces")
-                    ))),
-                    Bracket(_)    =>  return Some(Err(syn::Error::new(
-                        span,
-                        concat!("expected parenthesis in `#[", $attr_lit, "(...)]`, found brackets")
-                    ))),
+                Meta::List(ref ml) => match ml.delimiter {
+                    Paren(_) => {}
+                    Brace(_) => {
+                        return Some(Err(syn::Error::new(
+                            span,
+                            concat!(
+                                "expected parenthesis in `#[",
+                                $attr_lit,
+                                "(...)]`, found braces"
+                            ),
+                        )))
+                    }
+                    Bracket(_) => {
+                        return Some(Err(syn::Error::new(
+                            span,
+                            concat!(
+                                "expected parenthesis in `#[",
+                                $attr_lit,
+                                "(...)]`, found brackets"
+                            ),
+                        )))
+                    }
                 },
-                _   => return Some(Err(syn::Error::new(
-                    span,
-                    concat!("expected parenthesis in `#[", $attr_lit, "(...)]`")
-                )))
+                _ => {
+                    return Some(Err(syn::Error::new(
+                        span,
+                        concat!("expected parenthesis in `#[", $attr_lit, "(...)]`"),
+                    )))
+                }
             }
         }};
     }
@@ -247,15 +265,15 @@ fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
         "inside" => {
             expect_outer_attr!("inside(...)");
             expect_parenthesis!("inside");
-            Some(attr.parse_args().map(move |id| (FieldAttr::Inside(id), span)))
+            Some(
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::Inside(id), span)),
+            )
         }
         "call" => {
             expect_outer_attr!("call(...)");
             expect_parenthesis!("call");
-            Some(
-                attr.parse_args()
-                    .map(move |id| (FieldAttr::Call(id), span)),
-            )
+            Some(attr.parse_args().map(move |id| (FieldAttr::Call(id), span)))
         }
         "parse_terminated" => {
             expect_outer_attr!("parse_terminated(...)");
@@ -292,9 +310,8 @@ fn try_as_field_attr(attr: Attribute) -> Option<Result<(FieldAttr, Span)>> {
             expect_outer_attr!("peek_with(...)");
             expect_parenthesis!("peek_with");
             Some(
-                attr.parse_args().map(move |id| {
-                    (FieldAttr::Peek(PeekAttr::PeekWith(id)), span)
-                }),
+                attr.parse_args()
+                    .map(move |id| (FieldAttr::Peek(PeekAttr::PeekWith(id)), span)),
             )
         }
         "parse_if" => {

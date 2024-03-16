@@ -2,7 +2,7 @@
 
 use crate::fields::generate_fn_body;
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, quote, quote_spanned};
+use quote::{quote, quote_spanned, ToTokens};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::token;
