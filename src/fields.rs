@@ -34,7 +34,7 @@ pub(crate) fn generate_fn_body(
 enum FieldAttr {
     Inside(Ident),
     Tree(TreeKind),
-    Call(Path),
+    Call(Expr),
     ParseTerminated(Path),
     Peek(PeekAttr),
     Prefix(NeighborAttr),
@@ -49,7 +49,7 @@ enum TreeKind {
 
 enum ParseMethod {
     Tree(TreeKind, Span),
-    Call(Path),
+    Call(Expr),
     ParseTerminated(Path),
     Default,
 }
@@ -334,7 +334,7 @@ impl TryFrom<Vec<(FieldAttr, Span)>> for FieldAttrs {
                     return Err(syn::Error::new(span, "peeking can only be specified once"));
                 }
 
-                Call(path) => parse_method = ParseMethod::Call(path),
+                Call(expr) => parse_method = ParseMethod::Call(expr),
                 ParseTerminated(path) => parse_method = ParseMethod::ParseTerminated(path),
                 Tree(kind) => parse_method = ParseMethod::Tree(kind, span),
                 Inside(name) => inside = Some(name),
@@ -386,9 +386,12 @@ fn handle_field_attrs(field_name: &Ident, ty_span: Span, attrs: FieldAttrs) -> P
             required_var_defs = None;
             parse_expr = quote_spanned! { ty_span=> #input_source.parse()? };
         }
-        Call(path) => {
+        Call(expr) => {
             required_var_defs = None;
-            parse_expr = quote_spanned! { path.span()=> #input_source.call(#path)? };
+            parse_expr = quote_spanned!(expr.span()=> {
+                let result: ::syn::Result<_> = (#expr)(&#input_source);
+                result?
+            });
         }
         ParseTerminated(path) => {
             required_var_defs = None;

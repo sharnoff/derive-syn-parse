@@ -310,4 +310,35 @@ test_all! {
             }
         }
     };
+    calls: {
+        struct Calls {
+            #[call(Attribute::parse_outer)]
+            attrs: Vec<Attribute>,
+            #[call(|_| Ok(3))]
+            x: u32,
+            #[call(|_| Ok(x + 1))]
+            y: u32,
+        }
+    } => {
+        impl ::syn::parse::Parse for Calls {
+            fn parse(__parse_input: ::syn::parse::ParseStream) -> ::syn::Result<Self> {
+                let attrs: Vec<Attribute> = {
+                    let result: ::syn::Result<_> = (Attribute::parse_outer)(&__parse_input);
+                    result?
+                };
+
+                let x: u32 = {
+                    let result: ::syn::Result<_> = (|_| Ok(3))(&__parse_input);
+                    result?
+                };
+
+                let y: u32 = {
+                    let result: ::syn::Result<_> = (|_| Ok(x + 1))(&__parse_input);
+                    result?
+                };
+
+                Ok(Calls { attrs, x, y, })
+            }
+        }
+    };
 }
