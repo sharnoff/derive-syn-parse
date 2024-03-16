@@ -91,7 +91,7 @@
 //
 // ---------- SECTION: Enum Parsing ----------
 //
-//! <details><summary><b>➤ Enum parsing</b></summary>
+//! <details><summary><b>Enum parsing</b></summary>
 //!
 //! Parsing enums is a complex feature. When writing manual implementations of
 //! `Parse`, it doesn't come up as often, but there are also typically *many* ways to do it:
@@ -136,7 +136,7 @@
 //
 // ---------- SECTION: Token Trees ----------
 //
-//! <details><summary><b>➤ Token Trees (parens, brackets, braces)</b></summary>
+//! <details><summary><b>Token Trees (parens, brackets, braces)</b></summary>
 //!
 //! If derive macros had access to type information, we could auto-detect when a field contains any
 //! of `syn::token::{Paren, Bracket, Brace}`. Unfortunately, we can't - and these don't implement
@@ -190,7 +190,7 @@
 //
 // ---------- SECTION: Custom parsing (call, parse_terminated) ----------
 //
-//! <details><summary><b>➤ Custom parse functions (<code>#[call]</code>, <code>#[parse_terminated]</code>)</b></summary>
+//! <details><summary><b>Custom parse functions (<code>#[call]</code>, <code>#[parse_terminated]</code>)</b></summary>
 //!
 //! Not every type worth parsing implements `Parse`, but we still might want to parse them - things
 //! like [`Vec<Attribute>`] or any [`Punctuated<_, _>`] type. In these cases, the available
@@ -241,7 +241,7 @@
 //
 // ---------- SECTION: Conditional field parsing ----------
 //
-//! <details><summary><b>➤ Conditional field parsing (<code>#[parse_if]</code>, <code>#[peek]</code>)</b></summary>
+//! <details><summary><b>Conditional field parsing (<code>#[parse_if]</code>, <code>#[peek]</code>)</b></summary>
 //!
 //! When implementing `Parse` for structs, it is occasionally the case that certain fields are
 //! optional - or should only be parsed under certain circumstances. There are attributes for that!
@@ -301,7 +301,7 @@
 //
 // ---------- SECTION: Prefix & postfix ----------
 //
-//! <details> <summary><b>➤ Temporary parses: Prefix & postfix </b></summary>
+//! <details> <summary><b>Temporary parses: Prefix & postfix </b></summary>
 //!
 //! A common pattern that sometimes occurs when deriving `Parse` implementations is to have many
 //! unused punctuation fields - imagine a hypothetical implementation of field parsing with default

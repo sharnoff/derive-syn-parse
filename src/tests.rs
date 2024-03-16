@@ -16,7 +16,7 @@ macro_rules! test_all {
         fn $test_name() {
             let input: DeriveInput = parse_str(stringify!($($input)*)).expect("failed to parse input as `DeriveInput`");
             let expected_str = stringify!($($output)*);
-            let expected: ItemImpl = parse_str(expected_str).expect("failed to parse output as `ItemImpl`");
+            let expected: ItemImpl = parse_str(expected_str).expect("failed to parse expected output as `ItemImpl`");
 
             let output_tokens = crate::derive_parse_internal(input);
             let output: ItemImpl = parse2(output_tokens.clone())
@@ -28,7 +28,7 @@ macro_rules! test_all {
 
             if output != expected {
                 panic!(
-                    "output != expected\noutput = {:?},\nexpected = {:?}",
+                    "output != expected\noutput   = {:?},\nexpected = {:?}",
                     output_tokens.to_string(),
                     expected.to_token_stream().to_string(),
                 )
@@ -282,6 +282,62 @@ test_all! {
                     paren,
                     ident,
                 })
+            }
+        }
+    };
+    basic_peeks: {
+        // Either a literal `fn` token, or some generic identifier
+        enum FnOrIdent {
+            #[peek(token::Fn, name = "function")]
+            Fn(token::Fn),
+            #[peek_with(|_| true, name = "identifier")]
+            Ident(Ident),
+        }
+    } => {
+        impl ::syn::parse::Parse for FnOrIdent {
+            fn parse (__parse_input: ::syn::parse::ParseStream) -> ::syn:: Result<Self> {
+                if __parse_input.peek(token::Fn) {
+                    let _field_0: token::Fn = __parse_input.parse()?;
+                    return Ok(Self::Fn(_field_0,));
+                }
+
+                if (|_| true)(__parse_input) {
+                    let _field_0: Ident = __parse_input.parse()?;
+                    return Ok(Self::Ident(_field_0,));
+                }
+
+                Err (__parse_input.error("expected either function or identifier"))
+            }
+        }
+    };
+    calls: {
+        struct Calls {
+            #[call(Attribute::parse_outer)]
+            attrs: Vec<Attribute>,
+            #[call(|_| Ok(3))]
+            x: u32,
+            #[call(|_| Ok(x + 1))]
+            y: u32,
+        }
+    } => {
+        impl ::syn::parse::Parse for Calls {
+            fn parse(__parse_input: ::syn::parse::ParseStream) -> ::syn::Result<Self> {
+                let attrs: Vec<Attribute> = {
+                    let result: ::syn::Result<_> = (Attribute::parse_outer)(&__parse_input);
+                    result?
+                };
+
+                let x: u32 = {
+                    let result: ::syn::Result<_> = (|_| Ok(3))(&__parse_input);
+                    result?
+                };
+
+                let y: u32 = {
+                    let result: ::syn::Result<_> = (|_| Ok(x + 1))(&__parse_input);
+                    result?
+                };
+
+                Ok(Calls { attrs, x, y, })
             }
         }
     };

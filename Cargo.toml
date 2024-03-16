@@ -11,6 +11,9 @@ edition = "2018"
 [lib]
 proc-macro = true
 
+[features]
+full = ["syn/full"]
+
 [dependencies]
 syn = { version = "2", features = ["derive", "parsing"] }
 quote = "1"
