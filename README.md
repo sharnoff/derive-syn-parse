@@ -18,7 +18,7 @@ Using this crate is as simple as adding it to your 'Cargo.toml' and importing th
 # Cargo.toml
 
 [dependencies]
-derive-syn-parse = "0.1.5"
+derive-syn-parse = "0.2.0"
 ```
 
 ```rust
