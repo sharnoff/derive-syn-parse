@@ -5,8 +5,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::token;
-use syn::{parenthesized, Attribute, Expr, Ident, LitStr, Result, Token, Variant};
+use syn::{Attribute, Expr, Ident, LitStr, Result, Token, Variant};
 
 pub(crate) fn generate_impl(
     variants: impl ExactSizeIterator<Item = Variant>,
@@ -79,7 +78,6 @@ mod kwd {
 }
 
 struct PeekInfo {
-    _paren_token: token::Paren,
     expr: Expr,
     _comma: Token![,],
     _name_token: kwd::name,
@@ -151,11 +149,11 @@ fn extract_single_attr(variant_span: Span, attrs: Vec<Attribute>) -> Result<Vari
 }
 
 fn try_as_variant_attr(attr: Attribute) -> Option<Result<VariantAttr>> {
-    let name = attr.path.get_ident()?.to_string();
+    let name = attr.path().get_ident()?.to_string();
 
     match name.as_str() {
-        "peek" => Some(syn::parse2(attr.tokens).map(VariantAttr::Peek)),
-        "peek_with" => Some(syn::parse2(attr.tokens).map(VariantAttr::PeekWith)),
+        "peek" => Some(attr.parse_args().map(VariantAttr::Peek)),
+        "peek_with" => Some(attr.parse_args().map(VariantAttr::PeekWith)),
         _ => None,
     }
 }
@@ -166,14 +164,12 @@ fn try_as_variant_attr(attr: Attribute) -> Option<Result<VariantAttr>> {
 
 impl Parse for PeekInfo {
     fn parse(input: ParseStream) -> Result<Self> {
-        let paren;
         Ok(PeekInfo {
-            _paren_token: parenthesized!(paren in input),
-            expr: paren.parse()?,
-            _comma: paren.parse()?,
-            _name_token: paren.parse()?,
-            _eq: paren.parse()?,
-            name: paren.parse()?,
+            expr: input.parse()?,
+            _comma: input.parse()?,
+            _name_token: input.parse()?,
+            _eq: input.parse()?,
+            name: input.parse()?,
         })
     }
 }
